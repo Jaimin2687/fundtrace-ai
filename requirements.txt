@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+neo4j
+pydantic
+pydantic-settings
+websockets
+python-dotenv
+numpy
+pandas
+requests
+scikit-learn
+xgboost
