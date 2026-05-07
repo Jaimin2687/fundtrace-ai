@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# FundTrace AI - Quick Start Script
+# This script helps you get the entire pipeline running
+
+set -e  # Exit on error
+
+echo "=========================================="
+echo "FundTrace AI - Quick Start"
+echo "=========================================="
+echo ""
+
+# Check if .env exists
+if [ ! -f .env ]; then
+    echo "❌ .env file not found!"
+    echo "   Please copy .env.example to .env and configure it:"
+    echo "   cp .env.example .env"
+    echo ""
+    exit 1
+fi
+
+echo "✓ Found .env file"
+echo ""
+
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "📦 Creating virtual environment..."
+    python3 -m venv venv
+    echo "✓ Virtual environment created"
+    echo ""
+fi
+
+# Activate virtual environment
+echo "🔧 Activating virtual environment..."
+source venv/bin/activate
+echo "✓ Virtual environment activated"
+echo ""
+
+# Install dependencies
+echo "📦 Installing dependencies..."
+pip install -q -r requirements.txt
+echo "✓ Dependencies installed"
+echo ""
+
+# Check if data files exist
+if [ ! -f "data/elliptic_txs_classes.csv" ]; then
+    echo "❌ Data files not found in data/ directory!"
+    echo "   Please ensure the following files exist:"
+    echo "   - data/elliptic_txs_classes.csv"
+    echo "   - data/elliptic_txs_edgelist.csv"
+    echo "   - data/elliptic_txs_features.csv"
+    echo "   - data/paysim.csv"
+    echo ""
+    exit 1
+fi
+
+echo "✓ Data files found"
+echo ""
+
+# Check if data has been ingested
+if [ ! -f "data/elliptic_ml_ready.csv" ]; then
+    echo "📊 Running data ingestion..."
+    echo "   This will:"
+    echo "   - Load Elliptic data to Neo4j"
+    echo "   - Label PaySim patterns"
+    echo "   - Build ML-ready feature matrix"
+    echo ""
+    python data/ingest.py
+    echo ""
+    echo "✓ Data ingestion complete"
+    echo ""
+else
+    echo "✓ Data already ingested (elliptic_ml_ready.csv exists)"
+    echo ""
+fi
+
+# Check if model has been trained
+if [ ! -f "data/fraud_model.json" ]; then
+    echo "🤖 Training XGBoost model..."
+    echo "   This may take a few minutes..."
+    echo ""
+    python backend/worker/ml_worker.py --train
+    echo ""
+    echo "✓ Model training complete"
+    echo ""
+else
+    echo "✓ Model already trained (fraud_model.json exists)"
+    echo ""
+fi
+
+# Start the backend
+echo "=========================================="
+echo "🚀 Starting FundTrace AI Backend"
+echo "=========================================="
+echo ""
+echo "The backend will start with:"
+echo "  • FastAPI server on http://localhost:8000"
+echo "  • Transaction scoring worker (every 5s)"
+echo "  • PaySim alert streamer (every 3s)"
+echo "  • WebSocket alert broadcaster"
+echo ""
+echo "API Documentation:"
+echo "  • Swagger UI: http://localhost:8000/docs"
+echo "  • ReDoc: http://localhost:8000/redoc"
+echo ""
+echo "Press Ctrl+C to stop the server"
+echo ""
+echo "=========================================="
+echo ""
+
+# Start uvicorn
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
