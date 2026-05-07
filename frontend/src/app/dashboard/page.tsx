@@ -1,360 +1,212 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
+import { useState, useEffect } from 'react';
+import LiveAlertPanel from '@/components/LiveAlertPanel';
+import GraphViewer from '@/components/GraphViewer';
+import EvidencePanel from '@/components/EvidencePanel';
+import { fetchGraphFocus, fetchFraudClusters, fetchStats, GraphNode, GraphEdge, StatsResponse } from '@/lib/api';
+import { Activity, Database, AlertTriangle, CheckCircle } from 'lucide-react';
 
-// Dynamically import force graph to avoid SSR issues
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
+export default function DashboardPage() {
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [highlightTxId, setHighlightTxId] = useState<string | undefined>();
+  const [evidenceTxId, setEvidenceTxId] = useState<string | null>(null);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
-export default function Dashboard() {
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(false);
-  const [focusId, setFocusId] = useState("ACC-0000");
-  const [inputId, setInputId] = useState("ACC-0000");
-  const [modelStatus, setModelStatus] = useState<any | null>(null);
-  const [selectedNode, setSelectedNode] = useState<any | null>(null);
-  const [hoverNode, setHoverNode] = useState<any | null>(null);
-  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<any>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const pendingFocusRef = useRef(false);
-
-  const apiBase = useMemo(
-    () => process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000",
-    []
-  );
-  const wsBase = useMemo(
-    () => process.env.NEXT_PUBLIC_WS_BASE_URL || "ws://localhost:8000",
-    []
-  );
-  const apiKey = useMemo(
-    () => process.env.NEXT_PUBLIC_API_KEY || "tactical-fraud-trace-391x",
-    []
-  );
-
-  // Fetch initial graph
-  const applyFocusZoom = (nodes: any[]) => {
-    if (!graphRef.current) {
-      return;
-    }
-
-    const fraudNodes = nodes.filter((node: any) => node.aml_label === 1);
-    if (fraudNodes.length > 0) {
-      graphRef.current.zoomToFit(900, 80, (node: any) => node.aml_label === 1);
-      return;
-    }
-
-    graphRef.current.zoomToFit(800, 80);
-  };
-
-  const resetZoom = () => {
-    if (!graphRef.current) {
-      return;
-    }
-    graphRef.current.zoomToFit(700, 60);
-  };
-
-  const fetchGraph = (clusterId: string, shouldFocus = false) => {
-    setLoading(true);
-    setError(null);
-    setDemoMode(false);
-    pendingFocusRef.current = shouldFocus;
-    fetch(`${apiBase}/api/v1/graph/focus/${clusterId}` , {
-      headers: { "X-API-KEY": apiKey }
-    })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`Graph request failed (${res.status})`);
-        }
-        return res.json();
-      })
-      .then(data => {
-        // Map backend 'edges' to ForceGraph 'links' requirements.
-        const mappedData = {
-          nodes: data.nodes.map((n: any) => ({ ...n, id: n.account_id, aml_label: n.aml_label ?? 0 })),
-          links: data.edges.map((e: any) => ({ ...e, source: e.source_id, target: e.target_id }))
-        };
-        setGraphData(mappedData as any);
-        setLoading(false);
-        if (pendingFocusRef.current) {
-          pendingFocusRef.current = false;
-          window.setTimeout(() => applyFocusZoom(mappedData.nodes), 50);
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        const fallback = {
-          nodes: [
-            { id: "ACC-0000", account_id: "ACC-0000", kyc_risk_baseline: 88 },
-            { id: "ACC-0172", account_id: "ACC-0172", kyc_risk_baseline: 62 },
-            { id: "ACC-1044", account_id: "ACC-1044", kyc_risk_baseline: 41 },
-            { id: "ACC-3319", account_id: "ACC-3319", kyc_risk_baseline: 77 },
-          ],
-          links: [
-            { source: "ACC-0000", target: "ACC-0172" },
-            { source: "ACC-0172", target: "ACC-1044" },
-            { source: "ACC-0000", target: "ACC-3319" },
-          ],
-        };
-        setGraphData(fallback as any);
-        setDemoMode(true);
-        setError("Graph API offline. Showing demo subgraph.");
-        setLoading(false);
-      });
-  };
-
+  // Load stats on mount
   useEffect(() => {
-    fetchGraph(focusId, true);
-  }, [focusId]);
-
-  // Connect to websocket
-  useEffect(() => {
-    const ws = new WebSocket(`${wsBase}/api/v1/stream/alerts?token=${apiKey}`);
-    ws.onmessage = (event) => {
-      const alert = JSON.parse(event.data);
-      setAlerts(prev => [alert, ...prev].slice(0, 10));
-    };
-    return () => ws.close();
-  }, [wsBase, apiKey]);
-
-  useEffect(() => {
-    let active = true;
-    const fetchStatus = () => {
-      fetch(`${apiBase}/api/v1/stream/status/latest`)
-        .then(res => res.json())
-        .then(data => {
-          if (!active) {
-            return;
-          }
-          setModelStatus(data);
-        })
-        .catch(() => {
-          if (!active) {
-            return;
-          }
-          setModelStatus(null);
-        });
+    const loadStats = async () => {
+      try {
+        const data = await fetchStats();
+        setStats(data);
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
     };
 
-    fetchStatus();
-    const interval = window.setInterval(fetchStatus, 15000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [apiBase]);
-
-  useEffect(() => {
-    const updateDimensions = () => {
-      const width = containerRef.current?.clientWidth || 800;
-      const height = containerRef.current?.clientHeight || 600;
-      setDimensions({ width, height });
-    };
-    updateDimensions();
-    window.addEventListener("resize", updateDimensions);
-    return () => window.removeEventListener("resize", updateDimensions);
+    loadStats();
+    // Refresh stats every 30 seconds
+    const interval = setInterval(loadStats, 30000);
+    return () => clearInterval(interval);
   }, []);
 
+  // Handle alert selection
+  const handleAlertSelect = async (txId: string) => {
+    setLoading(true);
+    setHighlightTxId(txId);
+    
+    try {
+      const data = await fetchGraphFocus(txId, 2);
+      setGraphNodes(data.nodes);
+      setGraphEdges(data.edges);
+    } catch (error) {
+      console.error('Failed to fetch graph focus:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle node click
+  const handleNodeClick = (txId: string) => {
+    setEvidenceTxId(txId);
+  };
+
+  // Load fraud clusters
+  const handleLoadFraudClusters = async () => {
+    setLoading(true);
+    setHighlightTxId(undefined);
+    
+    try {
+      const data = await fetchFraudClusters();
+      setGraphNodes(data.nodes);
+      setGraphEdges(data.edges);
+    } catch (error) {
+      console.error('Failed to fetch fraud clusters:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Seed demo data
+  const handleSeedDemoData = async () => {
+    setSeeding(true);
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/graph/seed-demo', {
+        method: 'POST',
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to seed demo data');
+      }
+      
+      const result = await response.json();
+      console.log('Demo data seeded:', result);
+      
+      // Reload fraud clusters to show the demo data
+      await handleLoadFraudClusters();
+      
+      // Reload stats
+      const statsData = await fetchStats();
+      setStats(statsData);
+      
+      alert('Demo data seeded successfully! ' + result.nodes_created + ' nodes created.');
+    } catch (error) {
+      console.error('Failed to seed demo data:', error);
+      alert('Failed to seed demo data. Check console for details.');
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#0A0F1C] text-[#dce4e3] font-['Inter'] relative overflow-hidden">
-      {/* Grid Background */}
-      <div className="absolute inset-0 z-0 opacity-20 hud-grid" />
-
-      <div className="relative z-10 flex h-screen">
-        {/* Sidebar */}
-        <div className="w-80 border-r border-[#3b494a] bg-[#0A0F1C]/90 backdrop-blur flex flex-col">
-          <div className="p-4 border-b border-[#3b494a]">
-            <h1 className="font-['Space_Grotesk'] text-xl font-bold text-[#2DE2E6]">FundTrace AI</h1>
-            <p className="text-xs text-[#859494] font-mono mt-1">INVESTIGATOR TERMINAL</p>
+    <div className="h-screen flex flex-col bg-slate-950">
+      {/* Top Bar */}
+      <div className="bg-slate-900 border-b border-slate-800 px-6 py-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Activity className="w-8 h-8 text-blue-500" />
+            <h1 className="text-2xl font-bold text-slate-100">FundTrace AI</h1>
           </div>
-
-          <div className="p-4 border-b border-[#3b494a]">
-            <div className="text-[10px] font-mono text-[#859494] mb-2">FOCUS CLUSTER</div>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 bg-transparent border border-[#3b494a] px-2 py-1 text-xs font-mono text-[#dce4e3]"
-                value={inputId}
-                onChange={(event) => setInputId(event.target.value)}
-                placeholder="ACC-0000"
-              />
-              <button
-                className="border border-[#3b494a] px-2 py-1 text-[10px] text-[#2DE2E6]"
-                onClick={() => setFocusId(inputId.trim() || "ACC-0000")}
-              >
-                FOCUS
-              </button>
-              <button
-                className="border border-[#3b494a] px-2 py-1 text-[10px] text-[#859494]"
-                onClick={resetZoom}
-              >
-                RESET
-              </button>
-            </div>
-            <div className="mt-2 text-[10px] font-mono text-[#859494]">ACTIVE: {focusId}</div>
-          </div>
-
-          <div className="p-4 border-b border-[#3b494a]">
-            <div className="text-[10px] font-mono text-[#859494] mb-2">ACCOUNT DETAIL</div>
-            {selectedNode ? (
-              <div className="space-y-1 text-[10px] font-mono text-[#dce4e3]">
-                <div>ID: {selectedNode.account_id}</div>
-                <div>TYPE: {selectedNode.account_type ?? "Unknown"}</div>
-                <div>KYC: {selectedNode.kyc_risk_baseline ?? 0}</div>
-                <div>VOLUME: {selectedNode.total_volume ?? 0}</div>
-                <div>AML: {selectedNode.aml_label === 1 ? "FLAGGED" : "CLEAR"}</div>
-              </div>
-            ) : (
-              <div className="text-[10px] font-mono text-[#859494]">CLICK A NODE</div>
-            )}
-          </div>
-
-          <div className="p-4 border-b border-[#3b494a]">
-            <div className="text-[10px] font-mono text-[#859494] mb-2">MODEL STATUS</div>
-            {modelStatus ? (
-              <div className="space-y-1 text-[10px] font-mono text-[#dce4e3]">
-                <div>LAST RUN: {modelStatus.timestamp}</div>
-                <div>ALERTS SENT: {modelStatus.alerts_sent}</div>
-                <div>MODEL: {modelStatus.model_version ?? "unknown"}</div>
-                <div>MODE: {modelStatus.run_mode ?? "unknown"}</div>
-              </div>
-            ) : (
-              <div className="text-[10px] font-mono text-[#859494]">NO STATUS YET</div>
-            )}
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <h2 className="text-xs font-bold tracking-widest text-[#859494] uppercase mb-4">Live Threat Stream</h2>
-            
-            {alerts.map((alert, index) => (
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                key={`${alert.cluster_id}-${alert.timestamp ?? "no-ts"}-${index}`} 
-                className="border border-[#ffb4ab]/30 bg-[#93000a]/10 p-3 relative cursor-pointer"
-                onClick={() => {
-                  setInputId(alert.cluster_id);
-                  setFocusId(alert.cluster_id);
-                }}
-              >
-                <div className="absolute top-0 left-0 w-1 h-full bg-[#FF3B30]" />
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-mono text-[#ffb4ab]">{alert.timestamp ?? "NO_TS"}</span>
-                  <span className="text-[10px] font-bold bg-[#FF3B30] text-white px-1 leading-tight">SCORE: {alert.risk_score}</span>
-                </div>
-                <div className="text-sm font-['Space_Grotesk'] font-medium text-white">
-                  {alert.threat_type}
-                </div>
-                <div className="mt-2 text-xs font-mono text-[#859494]">
-                  {alert.cluster_id}
-                </div>
-                <div className="mt-2 text-[10px] text-[#859494]">
-                  {alert.narrative}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* Main Graph Area */}
-        <div
-          className="flex-1 relative"
-          ref={containerRef}
-          onMouseMove={(event) => {
-            const bounds = event.currentTarget.getBoundingClientRect();
-            setHoverPos({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
-          }}
-        >
-          {loading ? (
-             <div className="absolute inset-0 flex items-center justify-center text-[#2DE2E6] font-mono text-sm">
-               [ INITIALIZING GRAPH ENGINE... ]
-             </div>
-          ) : (
-            <ForceGraph2D
-              ref={graphRef}
-              graphData={graphData}
-              width={dimensions.width}
-              height={dimensions.height}
-              backgroundColor="transparent"
-              nodeColor={node => {
-                const item = node as any;
-                if (item.aml_label === 1) {
-                  return "#FF3B30";
-                }
-                if (selectedNode && selectedNode.account_id === item.account_id) {
-                  return "#FFD166";
-                }
-                return "#2DE2E6";
-              }}
-              linkColor={link => {
-                const item = link as any;
-                const sourceId = item.source?.account_id || item.source;
-                const targetId = item.target?.account_id || item.target;
-                if (selectedNode && (selectedNode.account_id === sourceId || selectedNode.account_id === targetId)) {
-                  return "rgba(255, 209, 102, 0.5)";
-                }
-                return "rgba(45, 226, 230, 0.2)";
-              }}
-              nodeRelSize={4}
-              nodeVal={node => ((node as any).aml_label === 1 ? 2.2 : 1)}
-              linkWidth={link => {
-                const item = link as any;
-                const sourceId = item.source?.account_id || item.source;
-                const targetId = item.target?.account_id || item.target;
-                if (selectedNode && (selectedNode.account_id === sourceId || selectedNode.account_id === targetId)) {
-                  return 1.8;
-                }
-                return 1;
-              }}
-              onNodeClick={(node) => {
-                const accountId = (node as any).account_id as string | undefined;
-                if (accountId) {
-                  setInputId(accountId);
-                  setFocusId(accountId);
-                  setSelectedNode(node);
-                }
-              }}
-              onNodeHover={(node) => {
-                setHoverNode(node || null);
-              }}
-            />
-          )}
-
-          {hoverNode && (
-            <div
-              className="absolute pointer-events-none border border-[#3b494a] bg-[#0A0F1C]/90 px-3 py-2 text-[10px] font-mono text-[#dce4e3]"
-              style={{ left: hoverPos.x + 12, top: hoverPos.y + 12 }}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSeedDemoData}
+              disabled={seeding || loading}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
             >
-              <div>ID: {hoverNode.account_id}</div>
-              <div>TYPE: {hoverNode.account_type ?? "Unknown"}</div>
-              <div>KYC: {hoverNode.kyc_risk_baseline ?? 0}</div>
-              <div>VOLUME: {hoverNode.total_volume ?? 0}</div>
-              <div>AML: {hoverNode.aml_label === 1 ? "FLAGGED" : "CLEAR"}</div>
-            </div>
-          )}
-          
-          {/* Top overlay */}
-          <div className="absolute top-4 left-4 p-3 border border-[#3b494a] bg-[#0A0F1C]/80 backdrop-blur font-mono text-xs text-[#859494]">
-            [ NODE_MAP // {focusId} SUBGRAPH ]<br/>
-            TOTAL NODES: <span className="text-[#2DE2E6]">{graphData.nodes?.length || 0}</span><br/>
-            TOTAL EDGES: <span className="text-[#2DE2E6]">{graphData.links?.length || 0}</span>
+              <Database className="w-4 h-4" />
+              {seeding ? 'Seeding...' : 'Seed Demo Data'}
+            </button>
+            <button
+              onClick={handleLoadFraudClusters}
+              disabled={loading}
+              className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Load Fraud Clusters
+            </button>
           </div>
-          {error && (
-            <div className="absolute bottom-4 left-4 border border-[#3b494a] bg-[#0A0F1C]/90 px-3 py-2 font-mono text-[10px] text-[#ffb4ab]">
-              {demoMode ? "[ DEMO MODE ]" : "[ CONNECTION FAILED ]"} {error}
-              <button
-                className="ml-3 border border-[#3b494a] px-2 py-1 text-[#2DE2E6]"
-                onClick={fetchGraph}
-              >
-                RETRY
-              </button>
+        </div>
+
+        {/* Stats Row */}
+        {stats && (
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+              <div className="flex items-center gap-2 mb-1">
+                <Database className="w-4 h-4 text-slate-400" />
+                <span className="text-xs text-slate-500">Total Nodes</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-100">
+                {stats.total_nodes.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/50 rounded-lg p-3 border border-red-900/30">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <span className="text-xs text-slate-500">Fraud Nodes</span>
+              </div>
+              <div className="text-2xl font-bold text-red-400">
+                {stats.fraud_nodes.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/50 rounded-lg p-3 border border-green-900/30">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle className="w-4 h-4 text-green-400" />
+                <span className="text-xs text-slate-500">Legit Nodes</span>
+              </div>
+              <div className="text-2xl font-bold text-green-400">
+                {stats.legit_nodes.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="w-4 h-4 text-slate-400" />
+                <span className="text-xs text-slate-500">Total Edges</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-100">
+                {stats.total_edges.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar - Live Alerts */}
+        <div className="w-80 flex-shrink-0">
+          <LiveAlertPanel onAlertSelect={handleAlertSelect} />
+        </div>
+
+        {/* Main Area - Graph Viewer */}
+        <div className="flex-1 relative">
+          {loading && (
+            <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center z-10">
+              <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
+                <div className="text-slate-300 text-sm">Loading graph data...</div>
+              </div>
             </div>
           )}
+          <GraphViewer
+            nodes={graphNodes}
+            edges={graphEdges}
+            highlightTxId={highlightTxId}
+            onNodeClick={handleNodeClick}
+          />
         </div>
+
+        {/* Right Panel - Evidence */}
+        <EvidencePanel txId={evidenceTxId} onClose={() => setEvidenceTxId(null)} />
       </div>
     </div>
   );
