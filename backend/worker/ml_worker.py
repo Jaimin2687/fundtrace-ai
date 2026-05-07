@@ -1,345 +1,351 @@
-import argparse
+"""
+ML Worker for FundTrace AI
+Trains XGBoost fraud detection model, scores transactions, and streams alerts
+"""
+
 import os
-import time
+import asyncio
+import random
 from datetime import datetime, timezone
+from typing import Dict, Optional
 
 import pandas as pd
-import requests
+import numpy as np
 import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+from neo4j import Driver
+from dotenv import load_dotenv
 
-from backend.core.config import get_settings
-from backend.db.neo4j_client import Neo4jClient
-
-FEATURE_QUERY = """
-MATCH (a:Account)
-CALL (a) {
-    OPTIONAL MATCH (a)-[t:TRANSACTION]->()
-    RETURN count(t) AS out_count,
-           coalesce(sum(t.amount), 0) AS out_amount,
-           coalesce(avg(t.amount), 0) AS out_avg,
-           sum(CASE WHEN t.is_structuring THEN 1 ELSE 0 END) AS out_structuring
-}
-CALL (a) {
-    OPTIONAL MATCH ()-[t:TRANSACTION]->(a)
-    RETURN count(t) AS in_count,
-           coalesce(sum(t.amount), 0) AS in_amount,
-           coalesce(avg(t.amount), 0) AS in_avg,
-           sum(CASE WHEN t.is_structuring THEN 1 ELSE 0 END) AS in_structuring
-}
-RETURN a.account_id AS account_id,
-       a.account_type AS account_type,
-       coalesce(a.kyc_risk_baseline, 0) AS kyc_risk_baseline,
-       coalesce(a.total_volume, 0) AS total_volume,
-    coalesce(a.is_fraud, a.aml_label, a.fraud_label, null) AS aml_label,
-       out_count, out_amount, out_avg, out_structuring,
-       in_count, in_amount, in_avg, in_structuring
-"""
-
-FOCUS_QUERY = """
-MATCH (start:Account {account_id: $cluster_id})
-CALL (start) {
-    MATCH (start)-[:TRANSACTION*1..3]-(n:Account)
-    WITH start, collect(DISTINCT n) AS neighbors
-    RETURN neighbors + [start] AS nodes
-}
-WITH nodes[0..$node_limit] AS limited_nodes
-UNWIND limited_nodes AS node
-WITH collect(DISTINCT node) AS nodes
-MATCH (a:Account)-[t:TRANSACTION]->(b:Account)
-WHERE a IN nodes AND b IN nodes
-RETURN nodes, collect(DISTINCT t) AS rels
-"""
+# Load environment variables from .env file
+load_dotenv()
 
 
-def _fetch_features(driver) -> pd.DataFrame:
-    with driver.session() as session:
-        records = session.run(FEATURE_QUERY).data()
-    if not records:
-        return pd.DataFrame()
-    return pd.DataFrame(records)
+# Module-level model cache
+_MODEL_CACHE: Optional[xgb.XGBClassifier] = None
+_PAYSIM_DATA: Optional[pd.DataFrame] = None
 
 
-def _prepare_features(frame: pd.DataFrame) -> pd.DataFrame:
-    numeric_cols = [
-        "kyc_risk_baseline",
-        "total_volume",
-        "out_count",
-        "out_amount",
-        "out_avg",
-        "out_structuring",
-        "in_count",
-        "in_amount",
-        "in_avg",
-        "in_structuring",
-    ]
-    for col in numeric_cols:
-        frame[col] = frame[col].fillna(0).astype(float)
-
-    frame["out_in_ratio"] = (frame["out_amount"] + 1) / (frame["in_amount"] + 1)
-    frame["out_structuring_rate"] = frame["out_structuring"] / frame["out_count"].clip(lower=1)
-    frame["in_structuring_rate"] = frame["in_structuring"] / frame["in_count"].clip(lower=1)
-    frame["flow_balance"] = (
-        (frame["out_amount"] - frame["in_amount"]).abs()
-        / (frame["out_amount"] + frame["in_amount"] + 1)
+def train_xgboost_model():
+    """
+    Train XGBoost fraud detection model on Elliptic dataset.
+    
+    Loads data/elliptic_ml_ready.csv, trains with 80/20 split,
+    saves model to data/fraud_model.json, and prints evaluation metrics.
+    """
+    print("\n" + "="*60)
+    print("TRAINING XGBOOST FRAUD DETECTION MODEL")
+    print("="*60)
+    
+    # Load ML-ready data
+    print("\n📂 Loading data/elliptic_ml_ready.csv...")
+    df = pd.read_csv('data/elliptic_ml_ready.csv')
+    print(f"  Loaded {len(df)} rows")
+    
+    # Separate features and labels
+    feature_cols = [f'f{i}' for i in range(1, 166)]
+    X = df[feature_cols].values
+    y = df['label'].values
+    
+    print(f"\n📊 Dataset info:")
+    print(f"  Features: {X.shape[1]} columns")
+    print(f"  Samples: {X.shape[0]}")
+    print(f"  Fraud: {(y == 1).sum():,} ({(y == 1).sum() / len(y) * 100:.1f}%)")
+    print(f"  Legit: {(y == 0).sum():,} ({(y == 0).sum() / len(y) * 100:.1f}%)")
+    
+    # Train/test split (80/20, stratified)
+    print("\n🔀 Splitting data (80/20, stratified)...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
-
-    ratio_cols = [
-        "out_in_ratio",
-        "out_structuring_rate",
-        "in_structuring_rate",
-        "flow_balance",
-    ]
-
-    types = pd.get_dummies(frame["account_type"].fillna("Unknown"), prefix="type")
-    features = pd.concat([frame[numeric_cols + ratio_cols], types], axis=1)
-    return features.fillna(0.0)
-
-
-def _coerce_label(value) -> int | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value != 0)
-    text = str(value).strip().lower()
-    if text in {"true", "t", "yes", "y", "fraud", "aml", "1"}:
-        return 1
-    if text in {"false", "f", "no", "n", "clear", "0"}:
-        return 0
-    return None
-
-
-def _build_labels(frame: pd.DataFrame) -> pd.Series:
-    if "aml_label" in frame.columns:
-        coerced = frame["aml_label"].map(_coerce_label)
-        if coerced.notna().any():
-            return coerced.fillna(0).astype(int)
-
-    out_structuring_rate = frame["out_structuring"] / frame["out_count"].clip(lower=1)
-    flow_balance = (
-        (frame["out_amount"] - frame["in_amount"]).abs()
-        / (frame["out_amount"] + frame["in_amount"] + 1)
-    )
-    vol_cutoff = frame["total_volume"].quantile(0.90)
-    out_cutoff = frame["out_amount"].quantile(0.90)
-
-    labels = (
-        ((out_structuring_rate > 0.35) & (frame["out_count"] >= 6))
-        | ((frame["in_count"] >= 5) & (frame["out_count"] >= 5) & (flow_balance < 0.25))
-        | (frame["total_volume"] >= vol_cutoff)
-        | (frame["out_amount"] >= out_cutoff)
-    ).astype(int)
-
-    if labels.sum() == 0 and len(frame.index) > 0:
-        top_count = max(1, int(len(frame.index) * 0.05))
-        top_index = frame["total_volume"].nlargest(top_count).index
-        labels.loc[top_index] = 1
-
-    return labels
-
-
-def _train_model(frame: pd.DataFrame):
-    features = _prepare_features(frame)
-    labels = _build_labels(frame)
-
-    if labels.nunique() < 2:
-        return None, features
-
-    pos_weight = (labels == 0).sum() / max((labels == 1).sum(), 1)
+    print(f"  Train: {len(X_train)} samples")
+    print(f"  Test: {len(X_test)} samples")
+    
+    # Train XGBoost with scale_pos_weight=9 for class imbalance
+    print("\n🤖 Training XGBoost classifier...")
+    print("  Parameters: scale_pos_weight=9 (handles ~1:9 fraud:legit ratio)")
+    
     model = xgb.XGBClassifier(
-        n_estimators=250,
-        max_depth=5,
-        learning_rate=0.08,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        reg_lambda=1.0,
-        scale_pos_weight=pos_weight,
-        eval_metric="logloss",
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=9,  # Handles class imbalance
+        eval_metric='logloss',
         random_state=42,
-        n_jobs=2,
+        n_jobs=-1
     )
-    model.fit(features, labels)
-    return model, features
+    
+    model.fit(X_train, y_train, verbose=False)
+    print("  ✓ Training complete")
+    
+    # Save model
+    model_path = 'data/fraud_model.json'
+    model.save_model(model_path)
+    print(f"\n💾 Model saved to {model_path}")
+    
+    # Evaluate on test set
+    print("\n📈 EVALUATION ON TEST SET:")
+    y_pred = model.predict(X_test)
+    
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=['Legit', 'Fraud']))
+    
+    print("\nConfusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    print(f"                Predicted")
+    print(f"                Legit  Fraud")
+    print(f"Actual Legit    {cm[0][0]:5d}  {cm[0][1]:5d}")
+    print(f"       Fraud    {cm[1][0]:5d}  {cm[1][1]:5d}")
+    
+    print("\n✅ Model training complete!")
 
 
-def _normalize(series: pd.Series) -> pd.Series:
-    min_val = float(series.min())
-    max_val = float(series.max())
-    if max_val - min_val < 1e-9:
-        return pd.Series(0.0, index=series.index)
-    return (series - min_val) / (max_val - min_val)
+def score_transaction(features_dict: Dict[str, float]) -> float:
+    """
+    Score a transaction using the trained fraud detection model.
+    
+    Args:
+        features_dict: Dictionary with keys f1..f165 containing feature values
+        
+    Returns:
+        Risk score between 0.0 and 1.0
+    """
+    global _MODEL_CACHE
+    
+    # Load model if not cached
+    if _MODEL_CACHE is None:
+        model_path = 'data/fraud_model.json'
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at {model_path}. Run train_xgboost_model() first.")
+        
+        _MODEL_CACHE = xgb.XGBClassifier()
+        _MODEL_CACHE.load_model(model_path)
+    
+    # Prepare feature vector (f1..f165)
+    feature_cols = [f'f{i}' for i in range(1, 166)]
+    features = np.array([[features_dict.get(col, 0.0) for col in feature_cols]])
+    
+    # Get probability of fraud (class 1)
+    risk_score = float(_MODEL_CACHE.predict_proba(features)[0, 1])
+    
+    return risk_score
 
 
-def _heuristic_score(frame: pd.DataFrame) -> pd.Series:
-    out_structuring_rate = frame["out_structuring"] / frame["out_count"].clip(lower=1)
-    flow_balance = (
-        (frame["out_amount"] - frame["in_amount"]).abs()
-        / (frame["out_amount"] + frame["in_amount"] + 1)
-    )
-
-    score = (
-        0.35 * _normalize(frame["kyc_risk_baseline"])
-        + 0.25 * _normalize(out_structuring_rate)
-        + 0.20 * _normalize(frame["total_volume"])
-        + 0.10 * _normalize(frame["out_amount"])
-        + 0.10 * _normalize(flow_balance)
-    )
-    return score * 100
-
-
-def _score(model, features: pd.DataFrame, frame: pd.DataFrame) -> pd.Series:
-    if model is None:
-        return _heuristic_score(frame)
-    probabilities = model.predict_proba(features)[:, 1]
-    return pd.Series(probabilities * 100)
-
-
-def _fetch_focus(driver, account_id: str, node_limit: int = 150) -> tuple[list, list]:
-    with driver.session() as session:
-        result = session.run(
-            FOCUS_QUERY, cluster_id=account_id, node_limit=node_limit
-        ).single()
-        if result is None:
-            return [], []
-        nodes = result["nodes"] or []
-        rels = result["rels"] or []
-
-    node_out = [
-        {
-            "account_id": str(node.get("account_id")),
-            "account_type": str(node.get("account_type")),
-            "kyc_risk_baseline": float(node.get("kyc_risk_baseline", 0.0)),
-            "total_volume": float(node.get("total_volume", 0.0)),
-        }
-        for node in nodes
-    ]
-    edge_out = [
-        {
-            "tx_id": str(rel.get("tx_id")),
-            "source_id": str(rel.get("source_id")),
-            "target_id": str(rel.get("target_id")),
-            "amount": float(rel.get("amount", 0.0)),
-            "timestamp": str(rel.get("timestamp")),
-            "is_structuring": bool(rel.get("is_structuring", False)),
-        }
-        for rel in rels
-    ]
-    return node_out, edge_out
-
-
-def _build_narrative(row: pd.Series) -> tuple[str, str]:
-    structuring_ratio = 0.0
-    if row["out_count"]:
-        structuring_ratio = row["out_structuring"] / max(row["out_count"], 1)
-
-    if structuring_ratio > 0.35 and row["out_count"] >= 6:
-        threat_type = "Structured Smurfing"
-        narrative = (
-            f"Account {row['account_id']} initiated repeated small transfers across "
-            f"{int(row['out_count'])} outbound hops with {structuring_ratio:.0%} structuring flags."
-        )
-    elif row["in_count"] >= 5 and row["out_count"] >= 5:
-        threat_type = "Rapid Layering"
-        narrative = (
-            f"Account {row['account_id']} shows symmetric in/out flow with "
-            f"{int(row['in_count'])} inbound and {int(row['out_count'])} outbound transfers."
-        )
-    else:
-        threat_type = "Anomalous Volume"
-        narrative = (
-            f"Account {row['account_id']} deviates from peer volume baselines with "
-            f"{row['total_volume']:.2f} total movement."
-        )
-
-    return threat_type, narrative
-
-
-def _post_alert(api_base: str, api_key: str, payload: dict) -> None:
-    url = f"{api_base}/api/v1/stream/ingest"
-    response = requests.post(
-        url,
-        json=payload,
-        headers={"x-api-key": api_key},
-        timeout=10,
-    )
-    response.raise_for_status()
-
-
-def _post_status(api_base: str, api_key: str, payload: dict) -> None:
-    url = f"{api_base}/api/v1/stream/status"
-    response = requests.post(
-        url,
-        json=payload,
-        headers={"x-api-key": api_key},
-        timeout=10,
-    )
-    response.raise_for_status()
+async def run_worker(neo4j_driver: Driver, alert_queue: asyncio.Queue):
+    """
+    Continuous worker loop that scores transactions and generates alerts.
+    
+    Every 5 seconds:
+    - Queries Neo4j for 10 random Transaction nodes with risk_score == 0.0
+    - Generates mock feature vectors (165 random floats)
+    - Scores transactions using the trained model
+    - Updates risk_score in Neo4j
+    - Puts high-risk alerts (>0.75) on the alert queue
+    
+    Args:
+        neo4j_driver: Neo4j driver instance
+        alert_queue: Async queue for alerts
+    """
+    print("\n" + "="*60)
+    print("STARTING TRANSACTION SCORING WORKER")
+    print("="*60)
+    print("  Interval: 5 seconds")
+    print("  Batch size: 10 transactions")
+    print("  Alert threshold: risk_score > 0.75")
+    print()
+    
+    # Pattern assignment based on risk score ranges
+    def get_pattern(risk_score: float) -> str:
+        if risk_score >= 0.90:
+            return "Round-tripping"
+        elif risk_score >= 0.85:
+            return "Layering"
+        elif risk_score >= 0.80:
+            return "Structuring"
+        else:
+            return "Dormant Account Activated"
+    
+    iteration = 0
+    while True:
+        try:
+            iteration += 1
+            
+            # Query Neo4j for unscored transactions
+            with neo4j_driver.session() as session:
+                result = session.run("""
+                    MATCH (t:Transaction)
+                    WHERE t.risk_score = 0.0
+                    RETURN t.txId AS txId, t.aml_label AS aml_label
+                    ORDER BY rand()
+                    LIMIT 10
+                """)
+                transactions = [dict(record) for record in result]
+            
+            if not transactions:
+                print(f"[Worker #{iteration}] No unscored transactions found")
+                await asyncio.sleep(5)
+                continue
+            
+            print(f"[Worker #{iteration}] Processing {len(transactions)} transactions...")
+            
+            alerts_generated = 0
+            
+            for tx in transactions:
+                tx_id = tx['txId']
+                aml_label = tx['aml_label']
+                
+                # Generate mock feature vector (165 random floats)
+                # In production, these would be real transaction features
+                features_dict = {f'f{i}': random.uniform(0, 1) for i in range(1, 166)}
+                
+                # Score the transaction
+                risk_score = score_transaction(features_dict)
+                
+                # Update risk_score in Neo4j
+                with neo4j_driver.session() as session:
+                    session.run("""
+                        MATCH (t:Transaction {txId: $txId})
+                        SET t.risk_score = $risk_score
+                    """, txId=tx_id, risk_score=risk_score)
+                
+                # Generate alert if high risk
+                if risk_score > 0.75:
+                    pattern = get_pattern(risk_score)
+                    alert = {
+                        'txId': tx_id,
+                        'risk_score': round(risk_score, 4),
+                        'aml_label': aml_label,
+                        'pattern': pattern,
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'source': 'elliptic'
+                    }
+                    
+                    await alert_queue.put(alert)
+                    alerts_generated += 1
+                    
+                    print(f"  🚨 ALERT: txId={tx_id}, risk={risk_score:.3f}, pattern={pattern}")
+            
+            print(f"[Worker #{iteration}] Scored {len(transactions)} txs, generated {alerts_generated} alerts")
+            
+        except Exception as e:
+            print(f"[Worker #{iteration}] Error: {str(e)}")
+        
+        await asyncio.sleep(5)
 
 
-def run_once(driver, api_base: str, api_key: str) -> int:
-    frame = _fetch_features(driver)
-    if frame.empty:
-        return 0
+async def stream_paysim_alerts(alert_queue: asyncio.Queue):
+    """
+    Stream PaySim fraud alerts to the alert queue.
+    
+    Every 3 seconds:
+    - Picks a random row from data/paysim_alerts.csv
+    - Creates an alert dict with transaction details
+    - Puts alert on the queue
+    
+    Args:
+        alert_queue: Async queue for alerts
+    """
+    global _PAYSIM_DATA
+    
+    print("\n" + "="*60)
+    print("STARTING PAYSIM ALERT STREAMER")
+    print("="*60)
+    print("  Interval: 3 seconds")
+    print("  Source: data/paysim_alerts.csv")
+    print()
+    
+    # Load PaySim alerts once
+    if _PAYSIM_DATA is None:
+        paysim_path = 'data/paysim_alerts.csv'
+        if not os.path.exists(paysim_path):
+            print(f"❌ PaySim alerts not found at {paysim_path}")
+            print("   Run data/ingest.py first to generate paysim_alerts.csv")
+            return
+        
+        _PAYSIM_DATA = pd.read_csv(paysim_path)
+        print(f"📂 Loaded {len(_PAYSIM_DATA)} PaySim fraud alerts")
+    
+    iteration = 0
+    while True:
+        try:
+            iteration += 1
+            
+            # Pick a random fraud transaction
+            row = _PAYSIM_DATA.sample(n=1).iloc[0]
+            
+            # Create alert dict
+            alert = {
+                'txId': row['nameOrig'],  # Use origin account as txId
+                'amount': float(row['amount']),
+                'from_account': row['nameOrig'],
+                'to_account': row['nameDest'],
+                'pattern': row['pattern_label'],
+                'risk_score': round(0.85 + random.uniform(0, 0.14), 4),  # 0.85-0.99
+                'source': 'paysim',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+            await alert_queue.put(alert)
+            
+            print(f"[PaySim #{iteration}] Alert: {alert['from_account']} → {alert['to_account']}, "
+                  f"${alert['amount']:,.2f}, pattern={alert['pattern']}, risk={alert['risk_score']:.3f}")
+            
+        except Exception as e:
+            print(f"[PaySim #{iteration}] Error: {str(e)}")
+        
+        await asyncio.sleep(3)
 
-    model, features = _train_model(frame)
-    frame["risk_score"] = _score(model, features, frame)
 
-    percentile = float(os.getenv("ML_ALERT_PERCENTILE", "95"))
-    cutoff = frame["risk_score"].quantile(percentile / 100.0)
-    max_alerts = int(os.getenv("ML_MAX_ALERTS", "25"))
-
-    candidates = frame[frame["risk_score"] >= cutoff].nlargest(max_alerts, "risk_score")
-
-    alerts_sent = 0
-    for _, row in candidates.iterrows():
-        nodes, edges = _fetch_focus(driver, row["account_id"])
-        threat_type, narrative = _build_narrative(row)
-
-        payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "cluster_id": row["account_id"],
-            "risk_score": round(float(row["risk_score"]), 2),
-            "threat_type": threat_type,
-            "narrative": narrative,
-            "nodes": nodes,
-            "edges": edges,
-        }
-        _post_alert(api_base, api_key, payload)
-        alerts_sent += 1
-
-    status_payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "alerts_sent": alerts_sent,
-        "model_version": "xgboost-v1",
-        "run_mode": os.getenv("ML_RUN_MODE", "heuristic-supervised"),
-    }
-    _post_status(api_base, api_key, status_payload)
-    return alerts_sent
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="FundTrace ML alert worker")
-    parser.add_argument("--once", action="store_true", help="Run one cycle and exit")
-    parser.add_argument("--interval", type=int, default=30, help="Seconds between runs")
-    args = parser.parse_args()
-
-    settings = get_settings()
-    api_base = settings.NEXT_PUBLIC_API_BASE_URL or "http://localhost:8000"
-
-    client = Neo4jClient(settings)
-    client.connect()
-
+async def main_worker_loop():
+    """
+    Main entry point for running both worker loops concurrently.
+    
+    Starts:
+    - Transaction scoring worker (every 5 seconds)
+    - PaySim alert streamer (every 3 seconds)
+    
+    Both workers share an alert queue.
+    """
+    # Get Neo4j credentials from environment
+    neo4j_uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+    neo4j_user = os.getenv('NEO4J_USER', 'neo4j')
+    neo4j_password = os.getenv('NEO4J_PASSWORD')
+    
+    if not neo4j_password:
+        raise ValueError("NEO4J_PASSWORD environment variable not set")
+    
+    # Create Neo4j driver
+    from neo4j import GraphDatabase
+    driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+    
+    # Create shared alert queue
+    alert_queue = asyncio.Queue()
+    
+    print("\n" + "="*60)
+    print("FUNDTRACE AI - ML WORKER")
+    print("="*60)
+    print(f"Neo4j: {neo4j_uri}")
+    print(f"Alert queue: shared between workers")
+    print()
+    
     try:
-        while True:
-            sent = run_once(client.driver, api_base, settings.API_KEY)
-            print(f"[ml-worker] alerts_sent={sent}")
-            if args.once:
-                break
-            time.sleep(args.interval)
+        # Run both workers concurrently
+        await asyncio.gather(
+            run_worker(driver, alert_queue),
+            stream_paysim_alerts(alert_queue)
+        )
     finally:
-        client.close()
+        driver.close()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # Check if training mode
+    if len(sys.argv) > 1 and sys.argv[1] == '--train':
+        train_xgboost_model()
+    else:
+        # Run worker loops
+        asyncio.run(main_worker_loop())

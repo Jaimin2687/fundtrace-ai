@@ -1,5 +1,5 @@
 .env
-.venv/
+.venv
 node_modules/
 frontend/node_modules/
 .stitch/
@@ -7,3 +7,5 @@ frontend/node_modules/
 __pycache__/
 *.pyc
 .DS_Store
+*/data
+data/
