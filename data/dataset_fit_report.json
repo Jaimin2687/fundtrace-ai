@@ -1,0 +1,25 @@
+{
+  "elliptic": {
+    "status": "available",
+    "transactions": 203769,
+    "label_counts": {
+      "unknown": 157205,
+      "2": 42019,
+      "1": 4545
+    },
+    "feature_dim": 165,
+    "time_step_range": [
+      1,
+      49
+    ]
+  },
+  "paysim": {
+    "status": "missing",
+    "details": "paysim.csv not found"
+  },
+  "fit_summary": {
+    "notes": [
+      "PaySim dataset missing; cannot evaluate cross-domain fit."
+    ]
+  }
+}

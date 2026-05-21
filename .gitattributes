@@ -1,0 +1,2 @@
+data/*.csv filter=lfs diff=lfs merge=lfs -text
+data/elliptic_bitcoin_dataset/*.csv filter=lfs diff=lfs merge=lfs -text

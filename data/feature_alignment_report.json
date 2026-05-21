@@ -1,0 +1,19 @@
+{
+  "feature_dim": 165,
+  "mapped_count": 12,
+  "coverage_ratio": 0.07272727272727272,
+  "mapped_features": {
+    "step": 0,
+    "amount": 1,
+    "oldbalanceOrg": 2,
+    "newbalanceOrig": 3,
+    "oldbalanceDest": 4,
+    "newbalanceDest": 5,
+    "isFlaggedFraud": 6,
+    "type_CASH_OUT": 7,
+    "type_TRANSFER": 8,
+    "type_PAYMENT": 9,
+    "type_CASH_IN": 10,
+    "type_DEBIT": 11
+  }
+}
