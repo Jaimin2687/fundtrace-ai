@@ -1,91 +1,58 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { AlertEvent, getWebSocketURL } from '@/lib/api';
-import AlertCard from './AlertCard';
+import { useRef } from 'react';
+import { useAlerts } from '@/context/AlertContext';
+import { AnimatePresence } from 'framer-motion';
+import EnhancedAlertCard from './EnhancedAlertCard';
 
 interface LiveAlertPanelProps {
   onAlertSelect: (txId: string) => void;
 }
 
 export default function LiveAlertPanel({ onAlertSelect }: LiveAlertPanelProps) {
-  const [alerts, setAlerts] = useState<AlertEvent[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const { alerts, isConnected, alertCount } = useAlerts();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // Connect to WebSocket
-    const ws = new WebSocket(getWebSocketURL());
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('[WebSocket] Connected to alert stream');
-      setIsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const alert: AlertEvent = JSON.parse(event.data);
-        console.log('[WebSocket] Received alert:', alert);
-        
-        setAlerts((prev) => {
-          const newAlerts = [alert, ...prev];
-          // Keep only last 50 alerts
-          return newAlerts.slice(0, 50);
-        });
-
-        // Auto-scroll to top
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = 0;
-        }
-      } catch (error) {
-        console.error('[WebSocket] Failed to parse alert:', error);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
-      setIsConnected(false);
-    };
-
-    ws.onclose = () => {
-      console.log('[WebSocket] Disconnected');
-      setIsConnected(false);
-    };
-
-    // Cleanup on unmount
-    return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-  }, []);
-
   return (
-    <div className="h-full flex flex-col bg-slate-900 border-r border-slate-800">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[rgba(7,11,18,0.95)] backdrop-blur-md">
       {/* Header */}
-      <div className="p-4 border-b border-slate-800">
+      <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-slate-100">Live Alerts</h2>
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              } animate-pulse`}
-            />
-            <span className="text-xs text-slate-400">
-              {isConnected ? 'Connected' : 'Disconnected'}
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+              Global triage
+            </div>
+            <h2 className="mt-1 text-lg font-semibold text-slate-100">Live Alerts</h2>
+          </div>
+          <div className="flex flex-col items-end gap-1 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+              Latency &lt;0.8s
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+              System secure
             </span>
           </div>
         </div>
-        <p className="text-xs text-slate-500">
-          {alerts.length} alert{alerts.length !== 1 ? 's' : ''} received
-        </p>
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>
+            {alertCount} alert{alertCount !== 1 ? 's' : ''} received
+          </span>
+          <span className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isConnected ? 'bg-emerald-400' : 'bg-rose-400'
+              } animate-pulse`}
+            />
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
       </div>
 
       {/* Alert list */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 min-h-0 overscroll-contain overflow-y-auto p-4 pr-3 space-y-3"
+      >
         {alerts.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-slate-500 text-sm">
@@ -93,13 +60,15 @@ export default function LiveAlertPanel({ onAlertSelect }: LiveAlertPanelProps) {
             </div>
           </div>
         ) : (
-          alerts.map((alert, index) => (
-            <AlertCard
-              key={`${alert.txId}-${index}`}
-              alert={alert}
-              onSelect={onAlertSelect}
-            />
-          ))
+          <AnimatePresence initial={false}>
+            {alerts.map((alert, index) => (
+              <EnhancedAlertCard
+                key={`${alert.txId}-${index}`}
+                alert={alert}
+                onSelect={onAlertSelect}
+              />
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </div>

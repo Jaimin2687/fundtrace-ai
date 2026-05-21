@@ -44,8 +44,6 @@ frontend/
 │   │   │   └── page.tsx
 │   │   ├── network/            # Network visualization page
 │   │   │   └── page.tsx
-│   │   ├── demo/               # Demo walkthrough for judges
-│   │   │   └── page.tsx
 │   │   ├── layout.tsx          # Root layout
 │   │   └── page.tsx            # Home page
 │   │
@@ -96,20 +94,6 @@ Dedicated network exploration page with:
 - Color-coded nodes (red=fraud, green=legit, gray=unknown)
 - Node size based on risk score
 - Highlighted node with pulsing effect
-
-### Demo Walkthrough (`/demo`)
-
-Scripted demonstration for judges with:
-- 4-step walkthrough
-- Auto-play full demo (2s delays)
-- Side-by-side graph and evidence
-- Demo information panel
-
-**Steps:**
-1. Detect Alert
-2. Trace the Chain
-3. View Pattern
-4. Generate Evidence
 
 ## 🧩 Components
 
@@ -333,7 +317,7 @@ Verify:
 - ✅ Interactive graph visualization
 - ✅ Evidence package generation
 - ✅ Search and exploration
-- ✅ Demo walkthrough
+- ✅ End-to-end walkthrough
 - ✅ Dark theme UI
 - ✅ Responsive design
 - ✅ Error handling

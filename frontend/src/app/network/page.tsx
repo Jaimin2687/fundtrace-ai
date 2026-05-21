@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import GraphViewer from '@/components/GraphViewer';
-import EvidencePanel from '@/components/EvidencePanel';
+import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import EnhancedGraphViewer from '@/components/EnhancedGraphViewer';
+import EnhancedEvidencePanel from '@/components/EnhancedEvidencePanel';
+import DashboardLayout from '@/components/DashboardLayout';
 import {
   fetchGraphFocus,
   fetchFraudClusters,
@@ -11,7 +13,7 @@ import {
   GraphEdge,
   StatsResponse,
 } from '@/lib/api';
-import { Search, Network, AlertTriangle, Loader2 } from 'lucide-react';
+import { Search, Network, AlertTriangle, Loader2, Database, CheckCircle, Activity } from 'lucide-react';
 
 export default function NetworkPage() {
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
@@ -23,7 +25,6 @@ export default function NetworkPage() {
   const [searchTxId, setSearchTxId] = useState('');
   const [searchDepth, setSearchDepth] = useState(2);
 
-  // Load stats on mount
   useEffect(() => {
     const loadStats = async () => {
       try {
@@ -33,39 +34,31 @@ export default function NetworkPage() {
         console.error('Failed to load stats:', error);
       }
     };
-
     loadStats();
   }, []);
 
-  // Handle search
   const handleSearch = async () => {
     if (!searchTxId.trim()) return;
-
     setLoading(true);
     setHighlightTxId(searchTxId);
-
     try {
       const data = await fetchGraphFocus(searchTxId, searchDepth);
       setGraphNodes(data.nodes);
       setGraphEdges(data.edges);
     } catch (error) {
       console.error('Failed to fetch graph focus:', error);
-      alert('Failed to load transaction. Please check the transaction ID.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle node click
   const handleNodeClick = (txId: string) => {
     setEvidenceTxId(txId);
   };
 
-  // Load fraud clusters
   const handleLoadFraudClusters = async () => {
     setLoading(true);
     setHighlightTxId(undefined);
-
     try {
       const data = await fetchFraudClusters();
       setGraphNodes(data.nodes);
@@ -77,174 +70,157 @@ export default function NetworkPage() {
     }
   };
 
-  return (
-    <div className="h-screen flex flex-col bg-slate-950">
-      {/* Top Bar */}
-      <div className="bg-slate-900 border-b border-slate-800 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Network className="w-8 h-8 text-blue-500" />
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100">Network Visualization</h1>
-              <p className="text-sm text-slate-400">
-                Explore transaction networks and fraud patterns
-              </p>
+  const topBar = (
+    <div className="px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-3">
+          <Network className="h-7 w-7 text-cyan-300" />
+          <div>
+            <div className="text-xs uppercase tracking-[0.35em] text-slate-400">
+              Network lab
             </div>
+            <h1 className="text-xl font-semibold text-white">
+              Transaction Graph
+            </h1>
           </div>
         </div>
-
-        {/* Search and Controls */}
-        <div className="flex items-center gap-4">
-          {/* Search Input */}
-          <div className="flex-1 flex items-center gap-2">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="text"
-                value={searchTxId}
-                onChange={(e) => setSearchTxId(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Enter transaction ID..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            {/* Depth Selector */}
-            <select
-              value={searchDepth}
-              onChange={(e) => setSearchDepth(Number(e.target.value))}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value={1}>Depth: 1</option>
-              <option value={2}>Depth: 2</option>
-              <option value={3}>Depth: 3</option>
-              <option value={4}>Depth: 4</option>
-            </select>
-
-            {/* Search Button */}
-            <button
-              onClick={handleSearch}
-              disabled={loading || !searchTxId.trim()}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-              Search
-            </button>
-          </div>
-
-          {/* Load Fraud Clusters Button */}
-          <button
-            onClick={handleLoadFraudClusters}
-            disabled={loading}
-            className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <AlertTriangle className="w-4 h-4" />
-            Fraud Clusters
-          </button>
-        </div>
-
-        {/* Stats Row */}
-        {stats && (
-          <div className="grid grid-cols-5 gap-3 mt-4">
-            <div className="bg-slate-800/50 rounded p-2 border border-slate-700">
-              <div className="text-xs text-slate-500 mb-1">Total Nodes</div>
-              <div className="text-lg font-bold text-slate-100">
-                {stats.total_nodes.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded p-2 border border-red-900/30">
-              <div className="text-xs text-slate-500 mb-1">Fraud</div>
-              <div className="text-lg font-bold text-red-400">
-                {stats.fraud_nodes.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded p-2 border border-green-900/30">
-              <div className="text-xs text-slate-500 mb-1">Legit</div>
-              <div className="text-lg font-bold text-green-400">
-                {stats.legit_nodes.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded p-2 border border-slate-700">
-              <div className="text-xs text-slate-500 mb-1">Unknown</div>
-              <div className="text-lg font-bold text-slate-400">
-                {stats.unknown_nodes.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded p-2 border border-slate-700">
-              <div className="text-xs text-slate-500 mb-1">Edges</div>
-              <div className="text-lg font-bold text-slate-100">
-                {stats.total_edges.toLocaleString()}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 relative overflow-hidden">
-        {loading && (
-          <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center z-10">
-            <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
-              <div className="text-slate-300 text-sm">Loading graph data...</div>
-            </div>
-          </div>
-        )}
-
-        <GraphViewer
-          nodes={graphNodes}
-          edges={graphEdges}
-          highlightTxId={highlightTxId}
-          onNodeClick={handleNodeClick}
-        />
-
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-4">
-          <div className="text-sm font-semibold text-slate-100 mb-3">Legend</div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-xs text-slate-300">Fraud</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-green-500" />
-              <span className="text-xs text-slate-300">Legit</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-gray-500" />
-              <span className="text-xs text-slate-300">Unknown</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500" />
-              <span className="text-xs text-slate-300">Highlighted</span>
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-700">
-            <div className="text-xs text-slate-400">
-              Node size = Risk score
-            </div>
-            <div className="text-xs text-slate-400">
-              Click node for evidence
-            </div>
-          </div>
+      {/* Search and Controls */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <input
+            type="text"
+            value={searchTxId}
+            onChange={(e) => setSearchTxId(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="Enter transaction ID..."
+            className="w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 transition"
+          />
         </div>
-
-        {/* Graph Info */}
-        {graphNodes.length > 0 && (
-          <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-3">
-            <div className="text-xs text-slate-400">
-              Showing {graphNodes.length} nodes, {graphEdges.length} edges
-            </div>
-          </div>
-        )}
-
-        {/* Evidence Panel */}
-        <EvidencePanel txId={evidenceTxId} onClose={() => setEvidenceTxId(null)} />
+        <select
+          value={searchDepth}
+          onChange={(e) => setSearchDepth(Number(e.target.value))}
+          className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-400/50"
+        >
+          <option value={1}>Depth: 1</option>
+          <option value={2}>Depth: 2</option>
+          <option value={3}>Depth: 3</option>
+          <option value={4}>Depth: 4</option>
+        </select>
+        <button
+          onClick={handleSearch}
+          disabled={loading || !searchTxId.trim()}
+          className="flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          Search
+        </button>
+        <button
+          onClick={handleLoadFraudClusters}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 hover:shadow-[0_0_15px_rgba(244,63,94,0.3)] disabled:opacity-50"
+        >
+          <AlertTriangle className="h-4 w-4" />
+          Fraud Clusters
+        </button>
       </div>
+
+      {/* Stats Row */}
+      {stats && (
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          {[
+            { label: 'Total Nodes', value: stats.total_nodes, icon: Database },
+            { label: 'Fraud Nodes', value: stats.fraud_nodes, icon: AlertTriangle, accent: true },
+            { label: 'Legit Nodes', value: stats.legit_nodes, icon: CheckCircle },
+            { label: 'Unknown', value: stats.unknown_nodes, icon: Activity },
+            { label: 'Edges', value: stats.total_edges, icon: Network },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className={`glass-panel rounded-xl p-3 ${
+                item.accent ? 'border-rose-500/30' : ''
+              }`}
+            >
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-400">
+                <item.icon className="h-3.5 w-3.5" />
+                {item.label}
+              </div>
+              <div className={`mt-1 text-lg font-semibold ${item.accent ? 'text-rose-300' : 'text-white'}`}>
+                {item.value.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
+  );
+
+  // Left panel: legend and graph info
+  const leftPanel = (
+    <div className="flex h-full flex-col p-5">
+      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-4">
+        Graph Legend
+      </div>
+      <div className="space-y-3">
+        {[
+          { color: 'bg-rose-500', label: 'Fraud' },
+          { color: 'bg-emerald-400', label: 'Legit' },
+          { color: 'bg-slate-500', label: 'Unknown' },
+          { color: 'bg-cyan-400', label: 'Highlighted' },
+        ].map((item) => (
+          <div key={item.label} className="flex items-center gap-3">
+            <div className={`h-3 w-3 rounded-full ${item.color}`} />
+            <span className="text-sm text-slate-300">{item.label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 border-t border-white/10 pt-4">
+        <div className="text-xs text-slate-500">Node size = Risk score</div>
+        <div className="text-xs text-slate-500 mt-1">Click node for evidence</div>
+      </div>
+      {graphNodes.length > 0 && (
+        <div className="mt-6 glass-panel rounded-xl p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400 mb-2">
+            Current View
+          </div>
+          <div className="text-sm text-white">{graphNodes.length} nodes</div>
+          <div className="text-sm text-white">{graphEdges.length} edges</div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <DashboardLayout
+      top={topBar}
+      left={leftPanel}
+      center={
+        <div className="relative h-full">
+          {loading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#070b12]/70">
+              <div className="glass-panel rounded-2xl p-6 text-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-400 mx-auto mb-3" />
+                <div className="text-sm text-slate-300">Loading graph data...</div>
+              </div>
+            </div>
+          )}
+          <EnhancedGraphViewer
+            nodes={graphNodes}
+            edges={graphEdges}
+            highlightTxId={highlightTxId}
+            onNodeClick={handleNodeClick}
+          />
+        </div>
+      }
+      right={
+        <EnhancedEvidencePanel txId={evidenceTxId} onClose={() => setEvidenceTxId(null)} />
+      }
+      rightOpen={Boolean(evidenceTxId)}
+      onToggleRight={() =>
+        setEvidenceTxId((prev) => (prev ? null : highlightTxId ?? null))
+      }
+    />
   );
 }

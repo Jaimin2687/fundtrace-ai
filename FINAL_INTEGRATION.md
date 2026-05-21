@@ -2,7 +2,7 @@
 
 ## ✅ Integration Complete
 
-All components have been wired together and polished for production demo.
+All components have been wired together and polished for production validation.
 
 ---
 
@@ -69,56 +69,6 @@ pydantic==2.9.2
      • Frontend: http://localhost:3000/dashboard
    ```
 
-### 2. Seed Demo Data Endpoint
-
-**New endpoint: `POST /api/v1/graph/seed-demo`**
-
-Creates 20 demo transactions with 3 fraud patterns:
-
-- **Chain 1: Round-tripping** (A→B→C→D→A)
-  - 4 nodes, all fraud
-  - Risk scores: 0.90-0.96
-  
-- **Chain 2: Smurfing** (E→F1, E→F2, E→F3, E→F4, E→F5)
-  - 6 nodes, E is fraud center
-  - Risk score: 0.95 (center), 0.45-0.70 (targets)
-  
-- **Chain 3: Layering** (G→H→I)
-  - 3 nodes, G is fraud
-  - Risk scores: 0.88, 0.78, 0.68
-
-**Response:**
-```json
-{
-  "seeded": true,
-  "nodes_created": 20,
-  "edges_created": 11,
-  "patterns": [
-    "Round-tripping: DEMO-RT-A → DEMO-RT-B → DEMO-RT-C → DEMO-RT-D → DEMO-RT-A",
-    "Smurfing: DEMO-SM-E → DEMO-SM-F1, F2, F3, F4, F5",
-    "Layering: DEMO-LY-G → DEMO-LY-H → DEMO-LY-I"
-  ]
-}
-```
-
-### 3. Seed Demo Data Button
-
-**Added to Dashboard (`frontend/src/app/dashboard/page.tsx`):**
-
-- Green "Seed Demo Data" button next to "Load Fraud Clusters"
-- Calls `POST /api/v1/graph/seed-demo`
-- Automatically loads fraud clusters after seeding
-- Refreshes stats
-- Shows success alert
-
-**Benefits:**
-- Guarantees judges can see patterns even if Neo4j is empty
-- No need to run full data ingestion
-- Creates realistic fraud patterns instantly
-- Perfect for quick demos
-
----
-
 ## 📜 New Scripts
 
 ### 1. `run.sh` - Start Both Services
@@ -157,7 +107,7 @@ Provides clear next steps if anything is missing.
 
 ### 1. `PRE_DEMO_CHECKLIST.md`
 
-Complete pre-demo checklist with:
+Complete readiness checklist with:
 - Environment setup verification
 - Data & model checks
 - Backend health checks
@@ -165,11 +115,11 @@ Complete pre-demo checklist with:
 - Integration tests
 - Performance checks
 - Browser compatibility
-- Demo scenarios
+- Validation scenarios
 - Backup plans
 - Presentation prep
 - Common issues & fixes
-- Demo script
+- Presentation script
 
 ### 2. Updated `README.md`
 
@@ -212,46 +162,6 @@ Now includes:
 
 ---
 
-## 🎯 Demo Flow
-
-### Quick Demo (2 minutes)
-
-1. **Start services**
-   ```bash
-   ./run.sh
-   ```
-
-2. **Open dashboard**
-   - http://localhost:3000/dashboard
-
-3. **Seed demo data**
-   - Click "Seed Demo Data" button
-   - Wait for success message
-
-4. **Show patterns**
-   - Click "Load Fraud Clusters"
-   - Point out red nodes (fraud)
-   - Click a node → Show evidence
-
-### Full Demo (5 minutes)
-
-1. **Show live monitoring**
-   - Dashboard with streaming alerts
-   - Click alert → Load graph
-   - Click node → Show evidence
-
-2. **Show investigation**
-   - Network page
-   - Search transaction
-   - Show subgraph
-
-3. **Show automated demo**
-   - Demo page
-   - Run full demo
-   - Explain each step
-
----
-
 ## 🐛 Known Issues & Fixes
 
 ### Issue: Backend won't start
@@ -273,7 +183,7 @@ docker run -p 7687:7687 -p 7474:7474 \
 **Fix:**
 1. Check ML model exists: `ls data/fraud_model.json`
 2. If missing, train model: `python backend/worker/ml_worker.py --train`
-3. Or use "Seed Demo Data" button
+3. Verify Neo4j has transactions available
 
 ### Issue: WebSocket disconnected
 **Symptoms:** Red dot in alert panel
@@ -320,21 +230,18 @@ Expected output:
 
 ---
 
-## 🎉 Ready for Demo!
+## 🎉 Ready for Production Validation
 
-If all checks pass, you're ready to demo FundTrace AI:
+If all checks pass, you're ready for production validation:
 
 1. ✅ Backend running with all workers
 2. ✅ Frontend running with WebSocket connected
-3. ✅ Demo data can be seeded instantly
-4. ✅ All fraud patterns visible
-5. ✅ Evidence generation working
-6. ✅ Real-time alerts streaming
+3. ✅ Evidence generation working
+4. ✅ Real-time alerts streaming
 
-**Demo URLs:**
+**URLs:**
 - Dashboard: http://localhost:3000/dashboard
 - Network: http://localhost:3000/network
-- Demo: http://localhost:3000/demo
 - API Docs: http://localhost:8000/docs
 
 ---
@@ -349,11 +256,10 @@ When everything is working correctly:
 ✓ Step 2: ML model found at data/fraud_model.json
 ✓ Step 3a: Alert broadcaster started
 ✓ Step 3b: Transaction scoring worker started
-✓ Step 3c: PaySim alert streamer started
 ✅ FundTrace AI running at http://localhost:8000
 
 [Worker #1] Processing 10 transactions...
-[PaySim #1] Alert: C123456789 → C987654321, $45,000.00
+[Worker #1] Alert: TX123456 → TX987654, $45,000.00
 ```
 
 **Frontend Terminal:**
@@ -400,7 +306,7 @@ cd frontend && npm run dev
 
 ## 🎯 Success Criteria
 
-Demo is successful when:
+System is successful when:
 
 - ✅ Backend starts with green checkmarks
 - ✅ Frontend loads without errors
@@ -408,12 +314,9 @@ Demo is successful when:
 - ✅ Alerts stream in real-time
 - ✅ Graph loads when clicking alert
 - ✅ Evidence panel shows transaction details
-- ✅ Demo data seeds successfully
-- ✅ All 3 fraud patterns visible
-- ✅ Judges can interact with system
 
 ---
 
-**Status: READY FOR PRODUCTION DEMO** 🚀
+**Status: READY FOR PRODUCTION VALIDATION** 🚀
 
 All integration complete. System tested and verified. Ready to showcase!

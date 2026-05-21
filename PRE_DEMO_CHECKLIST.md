@@ -1,6 +1,6 @@
-# FundTrace AI - Pre-Demo Checklist
+# FundTrace AI - Pre-Launch Checklist
 
-## ✅ Before the Demo
+## ✅ Before Validation
 
 ### 1. Environment Setup
 
@@ -44,13 +44,6 @@
   # Should exist and be ~1-5MB
   ```
 
-- [ ] **Demo data seeded (optional)**
-  ```bash
-  curl -X POST -H "X-API-Key: fraudtrace-dev-key-2026" \
-    http://localhost:8000/api/v1/graph/seed-demo
-  # Or use "Seed Demo Data" button in dashboard
-  ```
-
 ---
 
 ### 3. Backend Health
@@ -66,7 +59,7 @@
   ✓ Step 2: ML model found at data/fraud_model.json
   ✓ Step 3a: Alert broadcaster started
   ✓ Step 3b: Transaction scoring worker started
-  ✓ Step 3c: PaySim alert streamer started
+  ✓ Step 3c: Transaction scoring worker started
   ✅ FundTrace AI running at http://localhost:8000
   ```
 
@@ -114,12 +107,7 @@
 - [ ] **Network page loads**
   - Open http://localhost:3000/network
   - Should see search bar and controls
-  - Should see empty graph (or demo data if seeded)
-
-- [ ] **Demo page loads**
-  - Open http://localhost:3000/demo
-  - Should see 4 step cards
-  - Should see "Run Full Demo" button
+- Should see empty graph until results load
 
 ---
 
@@ -145,11 +133,6 @@
   - Dashboard → Click "Load Fraud Clusters"
   - Graph should show fraud network
   - Red nodes should be visible
-
-- [ ] **Demo walkthrough works**
-  - Demo page → Click "Run Full Demo"
-  - Should auto-play through 4 steps
-  - Graph and evidence should update
 
 ---
 
@@ -187,7 +170,7 @@ Test in at least one browser:
 
 ---
 
-### 8. Demo Scenarios
+### 8. Presentation Scenarios
 
 Prepare these scenarios for judges:
 
@@ -206,19 +189,9 @@ Prepare these scenarios for judges:
 4. Explain patterns
 5. Download evidence
 
-#### Scenario 3: Automated Demo
-1. Open demo page
-2. Click "Run Full Demo"
-3. Explain each step as it runs
-4. Show final evidence package
-
 ---
 
 ### 9. Backup Plans
-
-- [ ] **If Neo4j is empty**
-  - Use "Seed Demo Data" button
-  - Shows 3 fraud patterns immediately
 
 - [ ] **If WebSocket fails**
   - Use "Load Fraud Clusters" button
@@ -266,7 +239,7 @@ docker run -p 7687:7687 -p 7474:7474 -e NEO4J_AUTH=neo4j/password neo4j:5
 **Fix:**
 - Check ML worker logs in backend terminal
 - Verify model exists: `ls data/fraud_model.json`
-- Use "Seed Demo Data" button
+- Confirm Neo4j contains ingested transactions
 
 ### Issue: "Graph not rendering"
 **Fix:**
@@ -293,12 +266,12 @@ When everything is working:
 
 ---
 
-## 🎯 Demo Script
+## 🎯 Review Script
 
 ### Opening (30 seconds)
 "FundTrace AI is a real-time fraud detection system that combines graph databases, machine learning, and interactive visualization to detect money laundering patterns in financial networks."
 
-### Live Demo (2 minutes)
+### Live Review (2 minutes)
 1. **Show Dashboard** - "Here's our live monitoring dashboard"
 2. **Point to alerts** - "Alerts are streaming in real-time via WebSocket"
 3. **Click alert** - "When we click an alert, we see the transaction network"
@@ -307,18 +280,18 @@ When everything is working:
 
 ### Technical Deep Dive (1 minute)
 1. **Show Network page** - "Investigators can search any transaction"
-2. **Search demo transaction** - "Here's a confirmed fraud case"
+2. **Search transaction** - "Here's a confirmed fraud case"
 3. **Show evidence** - "The system generates comprehensive evidence packages"
 4. **Download JSON** - "Evidence can be exported for compliance"
 
 ### Closing (30 seconds)
-"FundTrace AI processes 46,000+ transactions, detects fraud in real-time, and provides actionable evidence for investigators. Built with Neo4j, XGBoost, FastAPI, and Next.js."
+"FundTrace AI processes high-volume transactions, detects fraud in real-time, and provides actionable evidence for investigators. Built with Neo4j, XGBoost, FastAPI, and Next.js."
 
 ---
 
 ## ✅ Final Checklist
 
-Before starting the demo:
+Before starting the review:
 
 - [ ] Backend running (green checkmarks in terminal)
 - [ ] Frontend running (no errors in terminal)
@@ -327,7 +300,6 @@ Before starting the demo:
 - [ ] Alerts streaming
 - [ ] Graph loads when clicking alert
 - [ ] Evidence panel works
-- [ ] Demo page tested
 - [ ] Backup browser ready
 - [ ] Screen recording started (optional)
 
@@ -335,6 +307,6 @@ Before starting the demo:
 
 ## 🎉 You're Ready!
 
-If all checkboxes are checked, you're ready to demo FundTrace AI!
+If all checkboxes are checked, you're ready to present FundTrace AI.
 
-**Good luck!** 🚀
+**Good luck.**

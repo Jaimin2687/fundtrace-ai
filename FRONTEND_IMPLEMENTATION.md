@@ -180,35 +180,6 @@ Complete Next.js 14 frontend implementation with TypeScript, Tailwind CSS, and s
 
 ---
 
-### 8. Demo Page (`src/app/demo/page.tsx`)
-
-**Features:**
-- ✅ 4-step walkthrough as clickable cards
-- ✅ "Run Full Demo" button (auto-plays with 2s delays)
-- ✅ Steps:
-  1. Detect Alert (1s delay)
-  2. Trace the Chain (fetch graph, depth=3)
-  3. View Pattern (1s delay)
-  4. Generate Evidence (fetch evidence)
-- ✅ Step cards show:
-  - Number badge (or checkmark if completed)
-  - Title and description
-  - Loading spinner when active
-  - Color coding (blue=active, green=completed, gray=pending)
-- ✅ Side-by-side layout:
-  - Left: Graph viewer
-  - Right: Evidence package
-- ✅ Demo info panel at bottom
-- ✅ Hardcoded txId = "1" (fraud transaction)
-
-**Demo Information:**
-- ✅ Dataset: Elliptic Bitcoin
-- ✅ Demo transaction: ID "1" (confirmed fraud)
-- ✅ Features listed
-- ✅ Technology stack
-
----
-
 ## 📦 Dependencies Added
 
 ```json
@@ -325,7 +296,6 @@ NEXT_PUBLIC_API_KEY=your-api-key
 
 - **Dashboard**: http://localhost:3000/dashboard
 - **Network**: http://localhost:3000/network
-- **Demo**: http://localhost:3000/demo
 
 ---
 
@@ -409,14 +379,6 @@ Network Page
 │   ├── Legend (bottom-left)
 │   ├── Graph Info (top-left)
 │   └── EvidencePanel (slide-in)
-
-Demo Page
-├── Header
-├── Run Full Demo Button
-├── Steps Grid (4 cards)
-└── Content Grid
-    ├── Graph Viewer
-    └── Evidence Package
 ```
 
 ---
@@ -432,7 +394,6 @@ All requirements met:
 5. ✅ **EvidencePanel** - Slide-in, chain display, download JSON
 6. ✅ **Dashboard** - 3-column layout, stats, interactions
 7. ✅ **Network** - Search, depth control, legend, full-screen graph
-8. ✅ **Demo** - 4 steps, auto-play, side-by-side layout
 
 **Additional Features:**
 - ✅ Loading states everywhere

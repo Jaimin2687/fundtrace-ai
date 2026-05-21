@@ -1,13 +1,25 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import type { ForceGraphMethods } from 'react-force-graph-2d';
 import { GraphNode, GraphEdge } from '@/lib/api';
 
 // Dynamically import ForceGraph2D with SSR disabled
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
 });
+
+type GraphCanvasNode = GraphNode & {
+  id: string;
+  x?: number;
+  y?: number;
+};
+
+type GraphCanvasLink = {
+  source: string;
+  target: string;
+};
 
 interface GraphViewerProps {
   nodes: GraphNode[];
@@ -43,44 +55,53 @@ export default function GraphViewer({
   }, []);
 
   // Transform data for react-force-graph
-  const graphData = {
-    nodes: nodes.map((node) => ({
-      id: node.txId,
-      ...node,
-    })),
-    links: edges.map((edge) => ({
-      source: edge.source,
-      target: edge.target,
-    })),
-  };
+  const graphData = useMemo<{ nodes: GraphCanvasNode[]; links: GraphCanvasLink[] }>(
+    () => ({
+      nodes: nodes.map((node) => ({
+        id: node.txId,
+        ...node,
+      })),
+      links: edges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+      })),
+    }),
+    [nodes, edges]
+  );
 
   // Node color based on aml_label
-  const getNodeColor = (node: any) => {
+  const getNodeColor = (node: GraphCanvasNode) => {
     if (node.id === highlightTxId) {
-      return '#3b82f6'; // Blue for highlighted
+      return '#22d3ee';
     }
     
     switch (node.aml_label) {
       case 'fraud':
-        return '#ef4444'; // Red
+        return '#f43f5e';
       case 'legit':
-        return '#22c55e'; // Green
+        return '#34d399';
       default:
-        return '#6b7280'; // Gray
+        return '#94a3b8';
     }
   };
 
   // Node size based on risk_score
-  const getNodeSize = (node: any) => {
+  const getNodeSize = (node: GraphCanvasNode) => {
     const baseSize = node.id === highlightTxId ? 8 : 4;
     const riskMultiplier = node.risk_score || 0;
     return baseSize + (riskMultiplier * 8); // Min 4, max 12 (or 16 if highlighted)
   };
 
   // Node canvas rendering with pulsing effect for highlighted node
-  const paintNode = (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+  const paintNode = (
+    node: GraphCanvasNode,
+    ctx: CanvasRenderingContext2D,
+    globalScale: number
+  ) => {
     const size = getNodeSize(node);
     const color = getNodeColor(node);
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
 
     // Draw pulsing ring for highlighted node
     if (node.id === highlightTxId) {
@@ -88,7 +109,7 @@ export default function GraphViewer({
       const pulseSize = size + Math.sin(time * 3) * 2;
       
       ctx.beginPath();
-      ctx.arc(node.x, node.y, pulseSize, 0, 2 * Math.PI);
+      ctx.arc(x, y, pulseSize, 0, 2 * Math.PI);
       ctx.strokeStyle = color;
       ctx.lineWidth = 2 / globalScale;
       ctx.stroke();
@@ -96,12 +117,12 @@ export default function GraphViewer({
 
     // Draw node
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+    ctx.arc(x, y, size, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
 
     // Draw border
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = '#0f172a';
     ctx.lineWidth = 1 / globalScale;
     ctx.stroke();
 
@@ -113,12 +134,12 @@ export default function GraphViewer({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(label, node.x, node.y - size - 8);
+      ctx.fillText(label, x, y - size - 8);
     }
   };
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-slate-950">
+    <div ref={containerRef} className="w-full h-full bg-[#070b12]">
       {nodes.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
@@ -129,21 +150,28 @@ export default function GraphViewer({
           </div>
         </div>
       ) : (
+        // @ts-ignore
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
           width={dimensions.width}
           height={dimensions.height}
-          backgroundColor="#0f172a"
+          backgroundColor="#070b12"
           nodeCanvasObject={paintNode}
-          nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+          nodePointerAreaPaint={(
+            node: GraphCanvasNode,
+            color: string,
+            ctx: CanvasRenderingContext2D
+          ) => {
             ctx.fillStyle = color;
             const size = getNodeSize(node);
+            const x = node.x ?? 0;
+            const y = node.y ?? 0;
             ctx.beginPath();
-            ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+            ctx.arc(x, y, size, 0, 2 * Math.PI);
             ctx.fill();
           }}
-          onNodeClick={(node: any) => {
+          onNodeClick={(node: GraphCanvasNode) => {
             if (onNodeClick) {
               onNodeClick(node.id);
             }
@@ -159,7 +187,9 @@ export default function GraphViewer({
               // Center on highlighted node
               const node = graphData.nodes.find((n) => n.id === highlightTxId);
               if (node) {
-                graphRef.current.centerAt(node.x, node.y, 1000);
+                const x = node.x ?? 0;
+                const y = node.y ?? 0;
+                graphRef.current.centerAt(x, y, 1000);
                 graphRef.current.zoom(2, 1000);
               }
             }

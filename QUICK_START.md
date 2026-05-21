@@ -17,10 +17,7 @@ cp .env.example .env
 # Edit .env: Set NEO4J_PASSWORD and API_KEY
 
 # Frontend
-cd frontend
-cp .env.local.example .env.local
-# Edit .env.local: Set NEXT_PUBLIC_API_KEY (same as backend)
-cd ..
+# Uses root .env values via next.config.ts
 ```
 
 ### 3. Run Automated Setup
@@ -43,9 +40,9 @@ npm run dev
 ```
 
 ### 5. Access Application
+- **Sign-in**: http://localhost:3000/sign-in
 - **Dashboard**: http://localhost:3000/dashboard
 - **Network**: http://localhost:3000/network
-- **Demo**: http://localhost:3000/demo
 - **API Docs**: http://localhost:8000/docs
 
 ---
@@ -150,8 +147,7 @@ fundtrace-ai/
 ├── frontend/
 │   ├── src/app/               # Pages
 │   └── src/components/        # Components
-├── .env                       # Backend config
-├── frontend/.env.local        # Frontend config
+├── .env                       # Backend + frontend config
 └── start.sh                   # Automated setup
 ```
 
@@ -171,12 +167,6 @@ fundtrace-ai/
 - Load fraud clusters
 - Full-screen graph with legend
 
-### Demo (`/demo`)
-- 4-step walkthrough
-- Auto-play mode
-- Side-by-side graph + evidence
-- Perfect for presentations
-
 ---
 
 ## 🔑 Environment Variables
@@ -188,9 +178,11 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=your-password
 API_KEY=your-secret-key
 CORS_ORIGINS=["http://localhost:3000"]
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_replace_me
+CLERK_SECRET_KEY=sk_test_replace_me
 ```
 
-### Frontend (`frontend/.env.local`)
+### Frontend (inherited via `.env`)
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 NEXT_PUBLIC_WS_BASE_URL=ws://localhost:8000
@@ -259,7 +251,6 @@ docker run -p 3000:3000 fundtrace-frontend
 - [ ] Clicking alert loads graph
 - [ ] Clicking node shows evidence
 - [ ] Search works in network page
-- [ ] Demo runs all 4 steps
 
 ---
 

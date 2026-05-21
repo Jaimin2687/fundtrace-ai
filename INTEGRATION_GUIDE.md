@@ -50,6 +50,26 @@ NEO4J_PASSWORD=your-neo4j-password
 NEO4J_ENCRYPTION=false
 API_KEY=your-secret-api-key
 CORS_ORIGINS=["http://localhost:3000","http://localhost:8000"]
+PAYSIM_MAX_TX=150000
+RESET_NEO4J=false
+KAFKA_ENABLED=false
+KAFKA_BROKERS=localhost:9092
+KAFKA_TOPIC=cbs.transactions.raw
+KAFKA_GROUP_ID=fundtrace-ingest
+KAFKA_SECURITY_PROTOCOL=PLAINTEXT
+KAFKA_SASL_MECHANISM=
+KAFKA_USERNAME=
+KAFKA_PASSWORD=
+KAFKA_BATCH_SIZE=200
+KAFKA_POLL_TIMEOUT_MS=1000
+BANK_API_ENABLED=false
+BANK_API_BASE_URL=
+BANK_API_ENDPOINT=/transactions/batch
+BANK_API_AUTH_HEADER=Authorization
+BANK_API_AUTH_TOKEN=
+BANK_API_POLL_INTERVAL_SEC=15
+BANK_API_TIMEOUT_SEC=10
+BANK_API_VERIFY_SSL=true
 ```
 
 **Frontend Configuration (`frontend/.env.local`):**
@@ -331,7 +351,6 @@ Connected (press CTRL+C to quit)
 Open browser to:
 - **Dashboard**: http://localhost:3000/dashboard
 - **Network**: http://localhost:3000/network
-- **Demo**: http://localhost:3000/demo
 
 ---
 
@@ -365,10 +384,10 @@ Open browser to:
 ┌─────────────────────────────────────────────────────────────┐
 │                     FRONTEND                                │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │  Dashboard   │  │   Network    │  │     Demo     │     │
-│  │    Page      │  │     Page     │  │     Page     │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│         ↓                  ↓                  ↓             │
+│  │  Dashboard   │  │   Network    │                        │
+│  │    Page      │  │     Page     │                        │
+│  └──────────────┘  └──────────────┘                        │
+│         ↓                  ↓                               │
 │  ┌──────────────────────────────────────────────────┐      │
 │  │         API Client (HTTP + WebSocket)            │      │
 │  └──────────────────────────────────────────────────┘      │
@@ -395,16 +414,6 @@ Open browser to:
 4. Click "Search" → Graph loads
 5. Click node → View evidence
 6. Or click "Fraud Clusters" → View fraud network
-
-### Workflow 3: Demo Presentation (Demo)
-
-1. Open http://localhost:3000/demo
-2. Click "Run Full Demo" → Auto-plays 4 steps
-3. Or click individual steps manually
-4. View graph and evidence side-by-side
-5. Show to judges/stakeholders
-
----
 
 ## 🐛 Troubleshooting
 
@@ -576,7 +585,6 @@ System is working correctly when:
 - ✅ Clicking alert loads graph
 - ✅ Clicking node shows evidence
 - ✅ Search works in network page
-- ✅ Demo runs all 4 steps successfully
 
 ---
 
@@ -607,9 +615,8 @@ After successful setup:
 
 1. **Explore the Dashboard**: Monitor real-time alerts
 2. **Investigate Transactions**: Use network page to explore
-3. **Run Demo**: Show to stakeholders
-4. **Customize**: Adjust thresholds, patterns, UI
-5. **Deploy**: Follow production deployment guide
+3. **Customize**: Adjust thresholds, patterns, UI
+4. **Deploy**: Follow production deployment guide
 
 ---
 

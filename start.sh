@@ -42,50 +42,111 @@ pip install -q -r requirements.txt
 echo "✓ Dependencies installed"
 echo ""
 
+# Determine model source (auto | elliptic | paysim)
+MODEL_SOURCE=$(grep -E "^MODEL_SOURCE=" .env | tail -n1 | cut -d= -f2-)
+if [ -z "$MODEL_SOURCE" ]; then
+    MODEL_SOURCE="auto"
+fi
+
+if [ "$MODEL_SOURCE" = "auto" ]; then
+    if [ -f "data/paysim_model.json" ]; then
+        MODEL_SOURCE="paysim"
+    else
+        MODEL_SOURCE="elliptic"
+    fi
+fi
+
+export MODEL_SOURCE
+
 # Check if data files exist
-if [ ! -f "data/elliptic_txs_classes.csv" ]; then
-    echo "❌ Data files not found in data/ directory!"
-    echo "   Please ensure the following files exist:"
-    echo "   - data/elliptic_txs_classes.csv"
-    echo "   - data/elliptic_txs_edgelist.csv"
-    echo "   - data/elliptic_txs_features.csv"
-    echo "   - data/paysim.csv"
-    echo ""
-    exit 1
+if [ "$MODEL_SOURCE" = "paysim" ]; then
+    if [ ! -f "data/paysim.csv" ]; then
+        echo "❌ PaySim dataset not found in data/ directory!"
+        echo "   Please ensure the following file exists:"
+        echo "   - data/paysim.csv"
+        echo ""
+        exit 1
+    fi
+else
+    if [ ! -f "data/elliptic_txs_classes.csv" ]; then
+        echo "❌ Elliptic data files not found in data/ directory!"
+        echo "   Please ensure the following files exist:"
+        echo "   - data/elliptic_txs_classes.csv"
+        echo "   - data/elliptic_txs_edgelist.csv"
+        echo "   - data/elliptic_txs_features.csv"
+        echo ""
+        exit 1
+    fi
 fi
 
 echo "✓ Data files found"
 echo ""
 
 # Check if data has been ingested
-if [ ! -f "data/elliptic_ml_ready.csv" ]; then
-    echo "📊 Running data ingestion..."
+if [ "$MODEL_SOURCE" = "elliptic" ]; then
+    if [ ! -f "data/elliptic_ml_ready.csv" ]; then
+        echo "📊 Running data ingestion..."
+        echo "   This will:"
+        echo "   - Load Elliptic data to Neo4j"
+        echo "   - Label PaySim patterns"
+        echo "   - Build ML-ready feature matrix"
+        echo ""
+        python data/ingest.py
+        echo ""
+        echo "✓ Data ingestion complete"
+        echo ""
+    else
+        echo "✓ Data already ingested (elliptic_ml_ready.csv exists)"
+        echo ""
+    fi
+fi
+
+if [ "$MODEL_SOURCE" = "paysim" ]; then
+    echo "📊 Running PaySim data ingestion..."
     echo "   This will:"
-    echo "   - Load Elliptic data to Neo4j"
+    echo "   - Load PaySim data to Neo4j"
     echo "   - Label PaySim patterns"
-    echo "   - Build ML-ready feature matrix"
     echo ""
     python data/ingest.py
     echo ""
-    echo "✓ Data ingestion complete"
-    echo ""
-else
-    echo "✓ Data already ingested (elliptic_ml_ready.csv exists)"
+    echo "✓ PaySim ingestion complete"
     echo ""
 fi
 
 # Check if model has been trained
-if [ ! -f "data/fraud_model.json" ]; then
-    echo "🤖 Training XGBoost model..."
-    echo "   This may take a few minutes..."
-    echo ""
-    python backend/worker/ml_worker.py --train
-    echo ""
-    echo "✓ Model training complete"
-    echo ""
+if [ "$MODEL_SOURCE" = "paysim" ]; then
+    if [ ! -f "data/paysim_ml_ready.csv" ]; then
+        echo "📊 Preparing PaySim dataset..."
+        python data/prepare_paysim.py
+        echo "✓ PaySim dataset ready"
+        echo ""
+    fi
+
+    if [ ! -f "data/paysim_model.json" ]; then
+        echo "🤖 Training PaySim XGBoost model..."
+        echo "   This may take a few minutes..."
+        echo ""
+        python backend/worker/ml_worker.py --train-paysim
+        echo ""
+        echo "✓ PaySim model training complete"
+        echo ""
+    else
+        echo "✓ PaySim model already trained (paysim_model.json exists)"
+        echo ""
+    fi
 else
-    echo "✓ Model already trained (fraud_model.json exists)"
-    echo ""
+    if [ ! -f "data/fraud_model.json" ]; then
+        echo "🤖 Training XGBoost model..."
+        echo "   This may take a few minutes..."
+        echo ""
+        python backend/worker/ml_worker.py --train
+        echo ""
+        echo "✓ Model training complete"
+        echo ""
+    else
+        echo "✓ Model already trained (fraud_model.json exists)"
+        echo ""
+    fi
 fi
 
 # Start the backend

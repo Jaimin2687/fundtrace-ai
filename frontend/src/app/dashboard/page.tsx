@@ -1,11 +1,21 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import LiveAlertPanel from '@/components/LiveAlertPanel';
-import GraphViewer from '@/components/GraphViewer';
-import EvidencePanel from '@/components/EvidencePanel';
-import { fetchGraphFocus, fetchFraudClusters, fetchStats, GraphNode, GraphEdge, StatsResponse } from '@/lib/api';
-import { Activity, Database, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  fetchGraphFocus,
+  fetchFraudClusters,
+  fetchStats,
+  GraphEdge,
+  GraphNode,
+  StatsResponse,
+} from "@/lib/api";
+import DashboardLayout from "@/components/DashboardLayout";
+import LiveAlertPanel from "@/components/LiveAlertPanel";
+import EnhancedGraphViewer from "@/components/EnhancedGraphViewer";
+import EnhancedEvidencePanel from "@/components/EnhancedEvidencePanel";
+import TemporalScrubber from "@/components/TemporalScrubber";
+import { Activity, AlertTriangle, CheckCircle, Database } from "lucide-react";
 
 export default function DashboardPage() {
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
@@ -14,200 +24,179 @@ export default function DashboardPage() {
   const [evidenceTxId, setEvidenceTxId] = useState<string | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [seeding, setSeeding] = useState(false);
+  const [timeStep, setTimeStep] = useState(1);
 
-  // Load stats on mount
+  const getMaxTimeStep = (nodes: GraphNode[]) => {
+    const steps = nodes.map((node) => node.time_step ?? 0);
+    return Math.max(1, ...steps);
+  };
+
+  const applyGraphData = (data: { nodes: GraphNode[]; edges: GraphEdge[] }) => {
+    setGraphNodes(data.nodes);
+    setGraphEdges(data.edges);
+    setTimeStep(getMaxTimeStep(data.nodes));
+  };
+
+  const maxTimeStep = useMemo(() => getMaxTimeStep(graphNodes), [graphNodes]);
+
+  const filteredNodes = useMemo(() => {
+    return graphNodes.filter((node) => (node.time_step ?? maxTimeStep) <= timeStep);
+  }, [graphNodes, maxTimeStep, timeStep]);
+
+  const filteredEdges = useMemo(() => {
+    const nodeIds = new Set(filteredNodes.map((node) => node.txId));
+    return graphEdges.filter(
+      (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)
+    );
+  }, [filteredNodes, graphEdges]);
+
   useEffect(() => {
     const loadStats = async () => {
       try {
         const data = await fetchStats();
         setStats(data);
       } catch (error) {
-        console.error('Failed to load stats:', error);
+        console.error("Failed to load stats:", error);
       }
     };
 
     loadStats();
-    // Refresh stats every 30 seconds
     const interval = setInterval(loadStats, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Handle alert selection
   const handleAlertSelect = async (txId: string) => {
     setLoading(true);
     setHighlightTxId(txId);
-    
+
     try {
       const data = await fetchGraphFocus(txId, 2);
-      setGraphNodes(data.nodes);
-      setGraphEdges(data.edges);
+      applyGraphData(data);
     } catch (error) {
-      console.error('Failed to fetch graph focus:', error);
+      console.error("Failed to fetch graph focus:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle node click
   const handleNodeClick = (txId: string) => {
     setEvidenceTxId(txId);
   };
 
-  // Load fraud clusters
   const handleLoadFraudClusters = async () => {
     setLoading(true);
     setHighlightTxId(undefined);
-    
+
     try {
       const data = await fetchFraudClusters();
-      setGraphNodes(data.nodes);
-      setGraphEdges(data.edges);
+      applyGraphData(data);
     } catch (error) {
-      console.error('Failed to fetch fraud clusters:', error);
+      console.error("Failed to fetch fraud clusters:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Seed demo data
-  const handleSeedDemoData = async () => {
-    setSeeding(true);
-    
-    try {
-      const response = await fetch('http://localhost:8000/api/v1/graph/seed-demo', {
-        method: 'POST',
-        headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_API_KEY || '',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to seed demo data');
-      }
-      
-      const result = await response.json();
-      console.log('Demo data seeded:', result);
-      
-      // Reload fraud clusters to show the demo data
-      await handleLoadFraudClusters();
-      
-      // Reload stats
-      const statsData = await fetchStats();
-      setStats(statsData);
-      
-      alert('Demo data seeded successfully! ' + result.nodes_created + ' nodes created.');
-    } catch (error) {
-      console.error('Failed to seed demo data:', error);
-      alert('Failed to seed demo data. Check console for details.');
-    } finally {
-      setSeeding(false);
-    }
-  };
-
-  return (
-    <div className="h-screen flex flex-col bg-slate-950">
-      {/* Top Bar */}
-      <div className="bg-slate-900 border-b border-slate-800 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Activity className="w-8 h-8 text-blue-500" />
-            <h1 className="text-2xl font-bold text-slate-100">FundTrace AI</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSeedDemoData}
-              disabled={seeding || loading}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <Database className="w-4 h-4" />
-              {seeding ? 'Seeding...' : 'Seed Demo Data'}
-            </button>
-            <button
-              onClick={handleLoadFraudClusters}
-              disabled={loading}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              Load Fraud Clusters
-            </button>
+  const topBar = (
+    <div className="px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Activity className="h-7 w-7 text-cyan-300" />
+          <div>
+            <div className="text-xs uppercase tracking-[0.35em] text-slate-400">
+              Investigator canvas
+            </div>
+            <h1 className="text-xl font-semibold text-white">FundTrace AI</h1>
           </div>
         </div>
-
-        {/* Stats Row */}
-        {stats && (
-          <div className="grid grid-cols-4 gap-4">
-            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-              <div className="flex items-center gap-2 mb-1">
-                <Database className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500">Total Nodes</span>
-              </div>
-              <div className="text-2xl font-bold text-slate-100">
-                {stats.total_nodes.toLocaleString()}
-              </div>
-            </div>
-
-            <div className="bg-slate-800/50 rounded-lg p-3 border border-red-900/30">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertTriangle className="w-4 h-4 text-red-400" />
-                <span className="text-xs text-slate-500">Fraud Nodes</span>
-              </div>
-              <div className="text-2xl font-bold text-red-400">
-                {stats.fraud_nodes.toLocaleString()}
-              </div>
-            </div>
-
-            <div className="bg-slate-800/50 rounded-lg p-3 border border-green-900/30">
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle className="w-4 h-4 text-green-400" />
-                <span className="text-xs text-slate-500">Legit Nodes</span>
-              </div>
-              <div className="text-2xl font-bold text-green-400">
-                {stats.legit_nodes.toLocaleString()}
-              </div>
-            </div>
-
-            <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-              <div className="flex items-center gap-2 mb-1">
-                <Activity className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500">Total Edges</span>
-              </div>
-              <div className="text-2xl font-bold text-slate-100">
-                {stats.total_edges.toLocaleString()}
-              </div>
-            </div>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleLoadFraudClusters}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-full border border-rose-500/40 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
+          >
+            <AlertTriangle className="h-4 w-4" />
+            Load clusters
+          </button>
+        </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Live Alerts */}
-        <div className="w-80 flex-shrink-0">
-          <LiveAlertPanel onAlertSelect={handleAlertSelect} />
-        </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-400">
+        <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+          System secure
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+          Case ID: {highlightTxId ?? "Awaiting selection"}
+        </span>
+      </div>
 
-        {/* Main Area - Graph Viewer */}
-        <div className="flex-1 relative">
+      {stats && (
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {[
+            { label: "Total Nodes", value: stats.total_nodes, icon: Database },
+            { label: "Fraud Nodes", value: stats.fraud_nodes, icon: AlertTriangle },
+            { label: "Legit Nodes", value: stats.legit_nodes, icon: CheckCircle },
+            { label: "Total Edges", value: stats.total_edges, icon: Activity },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border border-white/10 bg-white/5 p-4"
+            >
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-white">
+                {item.value.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <DashboardLayout
+      top={topBar}
+      left={<LiveAlertPanel onAlertSelect={handleAlertSelect} />}
+      center={
+        <div className="relative h-full">
           {loading && (
-            <div className="absolute inset-0 bg-slate-950/50 flex items-center justify-center z-10">
-              <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
-                <div className="text-slate-300 text-sm">Loading graph data...</div>
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#070b12]/70">
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm text-slate-200">
+                Loading graph data...
               </div>
             </div>
           )}
-          <GraphViewer
-            nodes={graphNodes}
-            edges={graphEdges}
+          <EnhancedGraphViewer
+            nodes={filteredNodes}
+            edges={filteredEdges}
             highlightTxId={highlightTxId}
             onNodeClick={handleNodeClick}
           />
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="absolute bottom-4 left-4 right-4"
+          >
+            <TemporalScrubber
+              min={1}
+              max={maxTimeStep}
+              value={timeStep}
+              onChange={setTimeStep}
+            />
+          </motion.div>
         </div>
-
-        {/* Right Panel - Evidence */}
-        <EvidencePanel txId={evidenceTxId} onClose={() => setEvidenceTxId(null)} />
-      </div>
-    </div>
+      }
+      right={
+        <EnhancedEvidencePanel txId={evidenceTxId} onClose={() => setEvidenceTxId(null)} />
+      }
+      rightOpen={Boolean(evidenceTxId)}
+      onToggleRight={() =>
+        setEvidenceTxId((prev) => (prev ? null : highlightTxId ?? null))
+      }
+    />
   );
 }

@@ -91,11 +91,33 @@ echo ""
 
 # 6. Check ML model
 echo "6. Checking ML model..."
-if [ -f "data/fraud_model.json" ]; then
-    MODEL_SIZE=$(ls -lh data/fraud_model.json | awk '{print $5}')
-    check_pass "ML model exists (size: $MODEL_SIZE)"
+MODEL_SOURCE=$(grep -E "^MODEL_SOURCE=" .env | tail -n1 | cut -d= -f2-)
+if [ -z "$MODEL_SOURCE" ]; then
+    MODEL_SOURCE="auto"
+fi
+
+if [ "$MODEL_SOURCE" = "auto" ]; then
+    if [ -f "data/paysim_model.json" ]; then
+        MODEL_SOURCE="paysim"
+    else
+        MODEL_SOURCE="elliptic"
+    fi
+fi
+
+if [ "$MODEL_SOURCE" = "paysim" ]; then
+    if [ -f "data/paysim_model.json" ]; then
+        MODEL_SIZE=$(ls -lh data/paysim_model.json | awk '{print $5}')
+        check_pass "PaySim model exists (size: $MODEL_SIZE)"
+    else
+        check_warn "PaySim model not found (run: python backend/worker/ml_worker.py --train-paysim)"
+    fi
 else
-    check_warn "ML model not found (run: python backend/worker/ml_worker.py --train)"
+    if [ -f "data/fraud_model.json" ]; then
+        MODEL_SIZE=$(ls -lh data/fraud_model.json | awk '{print $5}')
+        check_pass "ML model exists (size: $MODEL_SIZE)"
+    else
+        check_warn "ML model not found (run: python backend/worker/ml_worker.py --train)"
+    fi
 fi
 echo ""
 

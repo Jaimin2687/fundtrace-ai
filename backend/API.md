@@ -63,6 +63,7 @@ Get transaction subgraph focused on a specific transaction.
       "txId": "12345",
       "aml_label": "fraud",
       "risk_score": 0.85,
+      "time_step": 42,
       "x": null,
       "y": null
     }
@@ -70,7 +71,9 @@ Get transaction subgraph focused on a specific transaction.
   "edges": [
     {
       "source": "12345",
-      "target": "67890"
+      "target": "67890",
+      "is_suspicious": true,
+      "pattern": "Layering"
     }
   ]
 }
@@ -233,6 +236,97 @@ curl -H "X-API-Key: your-key" \
 
 ---
 
+## Ingest API (`/api/v1/ingest`)
+
+### Ingest Bank Transactions (HTTP)
+
+#### `POST /api/v1/ingest/transactions`
+
+Ingest bank transactions over HTTP. Requires `KAFKA_ENABLED=true`.
+
+**Headers:**
+- `X-API-Key`: API key (required)
+
+**Body:**
+```json
+{
+  "transactions": [
+    {
+      "tx_id": "TX-1001",
+      "source_id": "ACC-001",
+      "target_id": "ACC-002",
+      "amount": 15000.0,
+      "currency": "INR",
+      "timestamp": "2026-05-21T06:05:00Z",
+      "is_structuring_flag": false
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "accepted": 1,
+  "stored": 1,
+  "failed": 0
+}
+```
+
+### Ingest Status
+
+#### `GET /api/v1/ingest/status`
+
+Returns ingest counters and Kafka status.
+
+---
+
+## Bank API Ingest (`/api/v1/ingest/bank`)
+
+### Bank API Status
+
+#### `GET /api/v1/ingest/bank/status`
+
+Returns bank API ingest telemetry. Requires `BANK_API_ENABLED=true`.
+
+### Fetch Bank Batch
+
+#### `POST /api/v1/ingest/bank/fetch`
+
+Triggers a single pull from the configured bank API and streams each transaction
+directly to the alert queue (no Neo4j persistence). Requires `BANK_API_ENABLED=true`.
+
+## Export API (`/api/v1/export`)
+
+### Generate FIU-IND Draft
+
+#### `POST /api/v1/export/fiu-ind`
+
+Generate a watermarked FIU-IND draft PDF for a transaction cluster.
+
+**Headers:**
+- `X-API-Key`: API key (required)
+
+**Body:**
+```json
+{
+  "cluster_id": "12345"
+}
+```
+
+**Response:**
+- `application/pdf` file stream with `Content-Disposition: attachment`
+
+**Example:**
+```bash
+curl -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_id":"12345"}' \
+  http://localhost:8000/api/v1/export/fiu-ind --output fiu-ind-12345.pdf
+```
+
+---
+
 ## Data Models
 
 ### AlertEvent
@@ -245,6 +339,8 @@ curl -H "X-API-Key: your-key" \
   pattern: string;
   timestamp: string;
   amount?: number;
+  from_account?: string;
+  to_account?: string;
   source?: string;
 }
 ```
@@ -256,6 +352,9 @@ curl -H "X-API-Key: your-key" \
   txId: string;
   aml_label: string;
   risk_score: number;
+  time_step?: number;
+  amount?: number;
+  pattern?: string;
   x?: number;
   y?: number;
 }
@@ -267,6 +366,8 @@ curl -H "X-API-Key: your-key" \
 {
   source: string;
   target: string;
+  is_suspicious?: boolean;
+  pattern?: string;
 }
 ```
 
