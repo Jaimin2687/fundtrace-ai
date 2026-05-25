@@ -56,7 +56,8 @@ export default function BankIngestTerminal() {
       const data = await fetchIngestStatus();
       setStatus(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load status");
+      console.warn("Backend not ready: ", err);
+      setStatus(null);
     } finally {
       setLoading(false);
     }
@@ -69,7 +70,8 @@ export default function BankIngestTerminal() {
       const data = await fetchBankApiStatus();
       setBankStatus(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load bank API status");
+      console.warn("Backend not ready: ", err);
+      setBankStatus(null);
     } finally {
       setLoadingBank(false);
     }
