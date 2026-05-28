@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+export PYTHONUNBUFFERED=1
 
 echo "=========================================="
 echo "FundTrace AI - Starting"

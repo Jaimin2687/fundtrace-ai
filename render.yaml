@@ -23,5 +23,9 @@ services:
         value: "false"
       - key: BANK_API_ENABLED
         value: "false"
+      - key: NEO4J_ENCRYPTION
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: CORS_ORIGINS
-        value: '["https://fundtrace-ai.vercel.app"]'
+        value: '["https://fundtrace-ai-nu.vercel.app"]'
