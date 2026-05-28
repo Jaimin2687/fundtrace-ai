@@ -2,7 +2,7 @@ services:
   - type: web
     name: fundtrace-ai-backend
     env: python
-    buildCommand: "bash ./render-build.sh"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
@@ -21,5 +21,7 @@ services:
         value: "false"
       - key: STREAM_MOCK_MODE
         value: "false"
+      - key: BANK_API_ENABLED
+        value: "false"
       - key: CORS_ORIGINS
-        value: "[\"*\"]"
+        value: '["https://fundtrace-ai.vercel.app"]'

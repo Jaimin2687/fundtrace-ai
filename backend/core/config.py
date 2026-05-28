@@ -60,11 +60,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_cors_origins(cls, value: List[str]) -> List[str]:
         if not value:
-            raise ValueError("CORS_ORIGINS must contain exactly one origin")
-        if any(origin.strip() == "*" for origin in value):
-            raise ValueError("CORS_ORIGINS cannot include wildcard origins")
-        if len(value) != 1:
-            raise ValueError("CORS_ORIGINS must contain exactly one origin")
+            raise ValueError("CORS_ORIGINS must not be empty")
         return value
 
     @field_validator("MODEL_SOURCE")
