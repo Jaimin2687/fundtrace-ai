@@ -50,45 +50,52 @@ async def lifespan(app: FastAPI):
         print("✓ Neo4j driver initialized")
         print(f"  Connected to: {settings.NEO4J_URI}")
     except Exception as exc:
-        raise RuntimeError(f"Failed to connect to Neo4j: {exc}") from exc
+        print(f"⚠ WARNING: Neo4j connection failed: {exc}")
+        print("  The app will start but graph endpoints will return 503.")
+        print("  Check that your AuraDB instance is running at console.neo4j.io")
+        driver = None
 
     # Check model
     model_info = get_model_info()
     if not model_exists(model_info):
-        raise RuntimeError(f"ML model not found at {model_info.path}. Train the model before starting.")
-    print(f"✓ ML model found: {model_info.path}")
-    print(f"  Model source: {model_info.source}")
+        print(f"⚠ WARNING: ML model not found at {model_info.path}. Scoring will be unavailable.")
+    else:
+        print(f"✓ ML model found: {model_info.path}")
+        print(f"  Model source: {model_info.source}")
     
-    # Start background workers
-    try:
-        # Alert broadcaster
-        broadcaster_task = asyncio.create_task(stream.alert_broadcaster())
-        _worker_tasks.append(broadcaster_task)
-        print("✓ Alert broadcaster started")
+    # Start background workers (only if Neo4j is available)
+    if driver is not None:
+        try:
+            # Alert broadcaster
+            broadcaster_task = asyncio.create_task(stream.alert_broadcaster())
+            _worker_tasks.append(broadcaster_task)
+            print("✓ Alert broadcaster started")
 
-        # ML worker (real Neo4j scoring)
-        worker_task = asyncio.create_task(
-            ml_worker.run_worker(driver, stream.alert_queue)
-        )
-        _worker_tasks.append(worker_task)
-        print("✓ ML scoring worker started")
-
-        if settings.KAFKA_ENABLED:
-            kafka_task = asyncio.create_task(
-                asyncio.to_thread(start_kafka_consumer, driver, settings)
+            # ML worker (real Neo4j scoring)
+            worker_task = asyncio.create_task(
+                ml_worker.run_worker(driver, stream.alert_queue)
             )
-            _worker_tasks.append(kafka_task)
-            print("✓ Kafka ingestion consumer started")
+            _worker_tasks.append(worker_task)
+            print("✓ ML scoring worker started")
 
-        if settings.BANK_API_ENABLED:
-            bank_task = asyncio.create_task(
-                run_bank_api_poller(stream.alert_queue, settings)
-            )
-            _worker_tasks.append(bank_task)
-            print("✓ Bank API ingestion poller started")
-        
-    except Exception as e:
-        print(f"⚠ Error starting background workers: {e}")
+            if settings.KAFKA_ENABLED:
+                kafka_task = asyncio.create_task(
+                    asyncio.to_thread(start_kafka_consumer, driver, settings)
+                )
+                _worker_tasks.append(kafka_task)
+                print("✓ Kafka ingestion consumer started")
+
+            if settings.BANK_API_ENABLED:
+                bank_task = asyncio.create_task(
+                    run_bank_api_poller(stream.alert_queue, settings)
+                )
+                _worker_tasks.append(bank_task)
+                print("✓ Bank API ingestion poller started")
+
+        except Exception as e:
+            print(f"⚠ Error starting background workers: {e}")
+    else:
+        print("⚠ Skipping background workers — Neo4j unavailable")
     
     print("="*60)
     print("✅ FundTrace AI ready at http://localhost:8000")
